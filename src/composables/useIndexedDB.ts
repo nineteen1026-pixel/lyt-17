@@ -472,13 +472,18 @@ export function useIndexedDB() {
 
       const idMapping: Record<string, number> = {};
 
-      const existingPainTimestamps = new Set(
-        (await tx.objectStore('painRecords').getAll()).map(r => r.timestamp)
+      const existingPainRecords = await tx.objectStore('painRecords').getAll();
+      const existingPainByTimestamp = new Map(
+        existingPainRecords.map(r => [r.timestamp, r])
       );
 
       result.details.painRecords.total = data.painRecords.length;
       for (const record of data.painRecords) {
-        if (existingPainTimestamps.has(record.timestamp)) {
+        const existing = existingPainByTimestamp.get(record.timestamp);
+        if (existing) {
+          if (record.id !== undefined && existing.id !== undefined) {
+            idMapping[`pain_${record.id}`] = existing.id;
+          }
           result.details.painRecords.skipped++;
           continue;
         }
@@ -543,14 +548,19 @@ export function useIndexedDB() {
         result.details.weather.imported++;
       }
 
-      const existingPlanKeys = new Set(
-        (await tx.objectStore('medicationPlans').getAll()).map(p => `${p.name}_${p.createdAt}`)
+      const existingPlans = await tx.objectStore('medicationPlans').getAll();
+      const existingPlanByKey = new Map(
+        existingPlans.map(p => [`${p.name}_${p.createdAt}`, p])
       );
 
       result.details.medicationPlans.total = data.medicationPlans.length;
       for (const plan of data.medicationPlans) {
         const key = `${plan.name}_${plan.createdAt}`;
-        if (existingPlanKeys.has(key)) {
+        const existing = existingPlanByKey.get(key);
+        if (existing) {
+          if (plan.id !== undefined && existing.id !== undefined) {
+            idMapping[`plan_${plan.id}`] = existing.id;
+          }
           result.details.medicationPlans.skipped++;
           continue;
         }
@@ -559,7 +569,6 @@ export function useIndexedDB() {
         if (id !== undefined) {
           idMapping[`plan_${id}`] = newId;
         }
-        existingPlanKeys.add(key);
         result.details.medicationPlans.imported++;
       }
 

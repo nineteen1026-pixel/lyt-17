@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { ArrowLeft, Save, Pill, Activity, Cloud, Plus, X, Check } from 'lucide-vue-next';
+import { ArrowLeft, Save, Pill, Activity, Cloud, Plus, X, Check, Bell } from 'lucide-vue-next';
 import { usePainRecord } from '@/composables/usePainRecord';
 import BodyMap from '@/components/BodyMap.vue';
 import PainSlider from '@/components/PainSlider.vue';
@@ -296,6 +296,18 @@ const sections = [
             <Pill :size="20" />
             用药记录
           </h2>
+
+          <div class="mb-5 p-3 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-start gap-3">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/25 flex items-center justify-center shrink-0 mt-0.5">
+              <Bell :size="16" class="text-purple-300" />
+            </div>
+            <div class="text-sm">
+              <p class="font-medium text-purple-200 mb-0.5">自动创建用药提醒</p>
+              <p class="text-white/60">
+                保存记录后，系统将自动为您记录的药物创建每日提醒计划，并在设定的服药时间推送本地通知。
+              </p>
+            </div>
+          </div>
 
           <div v-if="currentMedications.length > 0" class="mb-6 space-y-3">
             <div

@@ -12,8 +12,32 @@ interface MedicationReminderState {
   nextCheckTime: number | null;
 }
 
-const NOTIFIED_KEYS = new Set<string>();
+const NOTIFIED_STORAGE_KEY = 'medication_notified_keys';
+const MAX_CATCHUP_MINUTES = 120;
 let checkIntervalId: number | null = null;
+
+const loadNotifiedKeys = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(NOTIFIED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as string[];
+    return new Set(arr);
+  } catch {
+    return new Set();
+  }
+};
+
+const saveNotifiedKeys = (keys: Set<string>) => {
+  try {
+    const today = formatDate(new Date());
+    const filtered = [...keys].filter(k => k.includes(`-${today}-`));
+    localStorage.setItem(NOTIFIED_STORAGE_KEY, JSON.stringify(filtered));
+  } catch {
+    // ignore
+  }
+};
+
+let NOTIFIED_KEYS: Set<string> = loadNotifiedKeys();
 
 export function useMedicationReminder() {
   const db = useIndexedDB();
@@ -27,6 +51,11 @@ export function useMedicationReminder() {
   });
 
   const plansChanged = ref(0);
+
+  const markNotified = (key: string) => {
+    NOTIFIED_KEYS.add(key);
+    saveNotifiedKeys(NOTIFIED_KEYS);
+  };
 
   const loadPlans = async () => {
     state.isLoading = true;
@@ -281,7 +310,11 @@ export function useMedicationReminder() {
     };
   };
 
-  const checkAndSendNotifications = async () => {
+  const calculateTodayAdherence = async (): Promise<AdherenceStats> => {
+    return await calculateAdherence('today');
+  };
+
+  const checkAndSendNotifications = async (catchUp: boolean = false) => {
     state.notificationPermission = getNotificationPermission();
     if (state.notificationPermission !== 'granted') {
       return;
@@ -295,6 +328,7 @@ export function useMedicationReminder() {
     await loadTodayMedications();
 
     const enabledPlans = await db.getEnabledMedicationPlans();
+    const maxPastMinutes = catchUp ? MAX_CATCHUP_MINUTES : 5;
 
     for (const plan of enabledPlans) {
       if (!isPlanActiveToday(plan, now)) continue;
@@ -310,17 +344,17 @@ export function useMedicationReminder() {
 
         const diffMinutes = (now.getTime() - scheduledDate.getTime()) / 1000 / 60;
 
-        if (diffMinutes >= 0 && diffMinutes <= 5) {
+        if (diffMinutes >= 0 && diffMinutes <= maxPastMinutes) {
           const log = await db.findMedicationLog(plan.id!, dateStr, time);
           if (log && log.taken) {
-            NOTIFIED_KEYS.add(notifyKey);
+            markNotified(notifyKey);
             continue;
           }
 
           sendMedicationReminder(plan.name, plan.dosage, time, plan.id);
-          NOTIFIED_KEYS.add(notifyKey);
-        } else if (diffMinutes > 5) {
-          NOTIFIED_KEYS.add(notifyKey);
+          markNotified(notifyKey);
+        } else if (diffMinutes > maxPastMinutes) {
+          markNotified(notifyKey);
         }
       }
     }
@@ -331,10 +365,10 @@ export function useMedicationReminder() {
       return;
     }
 
-    checkAndSendNotifications();
+    checkAndSendNotifications(true);
 
     checkIntervalId = window.setInterval(() => {
-      checkAndSendNotifications();
+      checkAndSendNotifications(false);
     }, 30000);
   };
 
@@ -385,6 +419,7 @@ export function useMedicationReminder() {
     markTakenByPlanAndTime,
     unmarkTaken,
     calculateAdherence,
+    calculateTodayAdherence,
     checkAndSendNotifications,
     startNotificationScheduler,
     stopNotificationScheduler,

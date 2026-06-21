@@ -15,6 +15,7 @@ const medicationService = useMedicationReminder();
 
 const todayStats = ref({ count: 0, avgPain: 0, maxPain: 0 });
 const weekStats = ref({ avgPain: 0, totalRecords: 0 });
+const todayAdherence = ref<AdherenceStats | null>(null);
 const weekAdherence = ref<AdherenceStats | null>(null);
 const isLoading = ref(true);
 const today = formatDisplayDate(new Date().toISOString().split('T')[0]);
@@ -30,7 +31,8 @@ const {
   loadTodayMedications,
   markTaken,
   unmarkTaken,
-  calculateAdherence
+  calculateAdherence,
+  calculateTodayAdherence
 } = medicationService;
 
 const displayMedications = computed(() => todayMedications.value.slice(0, 6));
@@ -49,6 +51,7 @@ const loadStats = async () => {
       }),
       loadPlans(),
       loadTodayMedications(),
+      calculateTodayAdherence().then(s => todayAdherence.value = s),
       calculateAdherence('week').then(s => weekAdherence.value = s)
     ]);
   } finally {
@@ -56,12 +59,17 @@ const loadStats = async () => {
   }
 };
 
+const refreshAdherence = async () => {
+  todayAdherence.value = await calculateTodayAdherence();
+  weekAdherence.value = await calculateAdherence('week');
+};
+
 const handleMarkTaken = async (logId: number) => {
   if (markingId.value !== null) return;
   markingId.value = logId;
   try {
     await markTaken(logId);
-    weekAdherence.value = await calculateAdherence('week');
+    await refreshAdherence();
   } finally {
     markingId.value = null;
   }
@@ -72,7 +80,7 @@ const handleUnmarkTaken = async (logId: number) => {
   markingId.value = logId;
   try {
     await unmarkTaken(logId);
-    weekAdherence.value = await calculateAdherence('week');
+    await refreshAdherence();
   } finally {
     markingId.value = null;
   }
@@ -269,53 +277,109 @@ onActivated(() => {
     </div>
 
     <div
-      v-if="weekAdherence && weekAdherence.totalScheduled > 0"
-      class="glass-card p-5 mb-6 animate-slide-up"
-      style="animation-delay: 0.4s"
+      v-if="(todayAdherence && todayAdherence.totalScheduled > 0) || (weekAdherence && weekAdherence.totalScheduled > 0)"
+      class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6"
     >
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="font-bold flex items-center gap-2">
-          <Activity :size="18" class="text-emerald-400" />
-          服药依从率（本周）
-        </h3>
-        <button @click="goToMedication" class="text-xs text-white/50 hover:text-white/70">
-          详情 →
-        </button>
-      </div>
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <p class="text-3xl font-bold bg-gradient-to-r bg-clip-text text-transparent"
+      <div
+        v-if="todayAdherence && todayAdherence.totalScheduled > 0"
+        class="glass-card p-5 animate-slide-up"
+        style="animation-delay: 0.4s"
+      >
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold flex items-center gap-2">
+            <Pill :size="18" class="text-purple-400" />
+            今日依从率
+          </h3>
+          <button @click="goToMedication" class="text-xs text-white/50 hover:text-white/70">
+            详情 →
+          </button>
+        </div>
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <p class="text-3xl font-bold bg-gradient-to-r bg-clip-text text-transparent"
+              :class="{
+                'from-emerald-400 to-green-400': todayAdherence.adherenceRate >= 80,
+                'from-yellow-400 to-orange-400': todayAdherence.adherenceRate >= 50 && todayAdherence.adherenceRate < 80,
+                'from-red-400 to-rose-400': todayAdherence.adherenceRate < 50
+              }"
+            >
+              {{ todayAdherence.adherenceRate }}%
+            </p>
+            <p class="text-sm text-white/60 mt-0.5">今日服药表现</p>
+          </div>
+          <div class="text-right space-y-1">
+            <p class="text-sm">
+              <span class="text-emerald-400 font-medium">{{ todayAdherence.totalTaken }}</span>
+              <span class="text-white/40"> / {{ todayAdherence.totalScheduled }} 已服</span>
+            </p>
+            <p v-if="todayAdherence.totalMissed > 0" class="text-sm">
+              <span class="text-red-400 font-medium">{{ todayAdherence.totalMissed }}</span>
+              <span class="text-white/40"> 漏服</span>
+            </p>
+          </div>
+        </div>
+        <div class="h-2.5 bg-white/10 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all duration-1000"
             :class="{
-              'from-emerald-400 to-green-400': weekAdherence.adherenceRate >= 80,
-              'from-yellow-400 to-orange-400': weekAdherence.adherenceRate >= 50 && weekAdherence.adherenceRate < 80,
-              'from-red-400 to-rose-400': weekAdherence.adherenceRate < 50
+              'bg-gradient-to-r from-emerald-500 to-green-500': todayAdherence.adherenceRate >= 80,
+              'bg-gradient-to-r from-yellow-500 to-orange-500': todayAdherence.adherenceRate >= 50 && todayAdherence.adherenceRate < 80,
+              'bg-gradient-to-r from-red-500 to-rose-500': todayAdherence.adherenceRate < 50
             }"
-          >
-            {{ weekAdherence.adherenceRate }}%
-          </p>
-          <p class="text-sm text-white/60 mt-0.5">坚持就是胜利 💪</p>
-        </div>
-        <div class="text-right space-y-1">
-          <p class="text-sm">
-            <span class="text-emerald-400 font-medium">{{ weekAdherence.totalTaken }}</span>
-            <span class="text-white/40"> / {{ weekAdherence.totalScheduled }} 已服</span>
-          </p>
-          <p v-if="weekAdherence.totalMissed > 0" class="text-sm">
-            <span class="text-red-400 font-medium">{{ weekAdherence.totalMissed }}</span>
-            <span class="text-white/40"> 漏服</span>
-          </p>
+            :style="{ width: `${todayAdherence.adherenceRate}%` }"
+          ></div>
         </div>
       </div>
-      <div class="h-2.5 bg-white/10 rounded-full overflow-hidden">
-        <div
-          class="h-full rounded-full transition-all duration-1000"
-          :class="{
-            'bg-gradient-to-r from-emerald-500 to-green-500': weekAdherence.adherenceRate >= 80,
-            'bg-gradient-to-r from-yellow-500 to-orange-500': weekAdherence.adherenceRate >= 50 && weekAdherence.adherenceRate < 80,
-            'bg-gradient-to-r from-red-500 to-rose-500': weekAdherence.adherenceRate < 50
-          }"
-          :style="{ width: `${weekAdherence.adherenceRate}%` }"
-        ></div>
+
+      <div
+        v-if="weekAdherence && weekAdherence.totalScheduled > 0"
+        class="glass-card p-5 animate-slide-up"
+        style="animation-delay: 0.42s"
+      >
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold flex items-center gap-2">
+            <Activity :size="18" class="text-emerald-400" />
+            本周依从率
+          </h3>
+          <button @click="goToMedication" class="text-xs text-white/50 hover:text-white/70">
+            详情 →
+          </button>
+        </div>
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <p class="text-3xl font-bold bg-gradient-to-r bg-clip-text text-transparent"
+              :class="{
+                'from-emerald-400 to-green-400': weekAdherence.adherenceRate >= 80,
+                'from-yellow-400 to-orange-400': weekAdherence.adherenceRate >= 50 && weekAdherence.adherenceRate < 80,
+                'from-red-400 to-rose-400': weekAdherence.adherenceRate < 50
+              }"
+            >
+              {{ weekAdherence.adherenceRate }}%
+            </p>
+            <p class="text-sm text-white/60 mt-0.5">坚持就是胜利 💪</p>
+          </div>
+          <div class="text-right space-y-1">
+            <p class="text-sm">
+              <span class="text-emerald-400 font-medium">{{ weekAdherence.totalTaken }}</span>
+              <span class="text-white/40"> / {{ weekAdherence.totalScheduled }} 已服</span>
+            </p>
+            <p v-if="weekAdherence.totalMissed > 0" class="text-sm">
+              <span class="text-red-400 font-medium">{{ weekAdherence.totalMissed }}</span>
+              <span class="text-white/40"> 漏服</span>
+            </p>
+          </div>
+        </div>
+        <div class="h-2.5 bg-white/10 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all duration-1000"
+            :class="{
+              'bg-gradient-to-r from-emerald-500 to-green-500': weekAdherence.adherenceRate >= 80,
+              'bg-gradient-to-r from-yellow-500 to-orange-500': weekAdherence.adherenceRate >= 50 && weekAdherence.adherenceRate < 80,
+              'bg-gradient-to-r from-red-500 to-rose-500': weekAdherence.adherenceRate < 50
+            }"
+            :style="{ width: `${weekAdherence.adherenceRate}%` }"
+          ></div>
+        </div>
       </div>
     </div>
 

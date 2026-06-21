@@ -1,7 +1,7 @@
 import { reactive, computed, toRefs } from 'vue';
 import { useIndexedDB } from './useIndexedDB';
 import { useWeather } from './useWeather';
-import type { PainRecord, Medication, Exercise, Weather, FullRecord } from '@/types';
+import type { PainRecord, Medication, Exercise, Weather, FullRecord, MedicationPlan } from '@/types';
 import { formatDate, formatDateTime } from '@/utils/date';
 
 interface PainRecordState {
@@ -17,6 +17,72 @@ interface PainRecordState {
 export function usePainRecord() {
   const db = useIndexedDB();
   const weatherApi = useWeather();
+
+  const syncMedicationsToPlans = async (medications: Medication[]) => {
+    if (!medications || medications.length === 0) return;
+
+    const allPlans = await db.getAllMedicationPlans();
+    const planByName = new Map(allPlans.map(p => [p.name.toLowerCase().trim(), p]));
+
+    const medsGrouped: Record<string, { names: string[]; times: string[]; dosage: string }> = {};
+    for (const med of medications) {
+      if (!med.name || !med.name.trim() || !med.time) continue;
+      const key = med.name.trim().toLowerCase();
+      if (!medsGrouped[key]) {
+        medsGrouped[key] = {
+          names: [med.name.trim()],
+          times: [],
+          dosage: med.dosage || ''
+        };
+      }
+      if (!medsGrouped[key].times.includes(med.time)) {
+        medsGrouped[key].times.push(med.time);
+      }
+      if (med.dosage && !medsGrouped[key].dosage) {
+        medsGrouped[key].dosage = med.dosage;
+      }
+    }
+
+    const now = formatDateTime(new Date());
+    const today = formatDate(new Date());
+
+    for (const [key, data] of Object.entries(medsGrouped)) {
+      const existing = planByName.get(key);
+      const times = [...data.times].sort();
+      const name = data.names[0];
+
+      if (existing) {
+        const mergedTimes = [...new Set([...existing.times, ...times])].sort();
+        const needsUpdate =
+          mergedTimes.length !== existing.times.length ||
+          (data.dosage && existing.dosage !== data.dosage) ||
+          !existing.enabled;
+
+        if (needsUpdate) {
+          const updated: MedicationPlan = {
+            ...existing,
+            times: mergedTimes,
+            dosage: data.dosage || existing.dosage,
+            enabled: true,
+            updatedAt: now
+          };
+          await db.updateMedicationPlan(updated);
+        }
+      } else {
+        const plan: Omit<MedicationPlan, 'id'> = {
+          name,
+          dosage: data.dosage,
+          times,
+          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+          startDate: today,
+          enabled: true,
+          createdAt: now,
+          updatedAt: now
+        };
+        await db.addMedicationPlan(plan);
+      }
+    }
+  };
 
   const state = reactive<PainRecordState>({
     editingRecordId: null,
@@ -135,6 +201,8 @@ export function usePainRecord() {
         await db.addWeather({ ...state.currentWeather, recordId });
       }
 
+      await syncMedicationsToPlans(state.currentMedications);
+
       return recordId;
     } finally {
       state.isSaving = false;
@@ -203,6 +271,8 @@ export function usePainRecord() {
           await db.addExercise({ ...ex, recordId });
         }
       }
+
+      await syncMedicationsToPlans(state.currentMedications);
 
       return true;
     } finally {

@@ -1,0 +1,61 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import HomePage from '@/pages/HomePage.vue'
+import RecordPage from '@/pages/RecordPage.vue'
+import BodyMapPage from '@/pages/BodyMapPage.vue'
+import TrendsPage from '@/pages/TrendsPage.vue'
+import HistoryPage from '@/pages/HistoryPage.vue'
+import SettingsPage from '@/pages/SettingsPage.vue'
+
+const routes = [
+  {
+    path: '/',
+    name: 'home',
+    component: HomePage,
+    meta: { title: '疼痛日记' }
+  },
+  {
+    path: '/record',
+    name: 'record',
+    component: RecordPage,
+    meta: { title: '记录疼痛' }
+  },
+  {
+    path: '/body',
+    name: 'body',
+    component: BodyMapPage,
+    meta: { title: '部位标注' }
+  },
+  {
+    path: '/trends',
+    name: 'trends',
+    component: TrendsPage,
+    meta: { title: '趋势分析' }
+  },
+  {
+    path: '/history',
+    name: 'history',
+    component: HistoryPage,
+    meta: { title: '历史记录' }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: SettingsPage,
+    meta: { title: '设置' }
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+  scrollBehavior() {
+    return { top: 0 }
+  }
+})
+
+router.beforeEach((to, _from, next) => {
+  document.title = `${to.meta.title || '疼痛日记'} - 疼痛日记`
+  next()
+})
+
+export default router

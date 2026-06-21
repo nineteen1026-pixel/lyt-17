@@ -1,6 +1,5 @@
 import { ref, computed } from 'vue';
 import { usePainRecord } from './usePainRecord';
-import { useMedicationReminder } from './useMedicationReminder';
 import { useIndexedDB } from './useIndexedDB';
 import type { FullRecord, MedicationLog } from '@/types';
 import { formatDate, getMonthRange } from '@/utils/date';
@@ -31,7 +30,6 @@ export interface MonthlyStats {
 
 export function useMonthlyReport() {
   const recordService = usePainRecord();
-  const medicationService = useMedicationReminder();
   const db = useIndexedDB();
 
   const currentDate = ref(new Date());
@@ -81,19 +79,50 @@ export function useMonthlyReport() {
     return maxStreak;
   };
 
+  const computeMedicationStatsFromLogs = (logs: MedicationLog[]): MonthlyStats['medicationStats'] => {
+    const totalScheduled = logs.length;
+    const totalTaken = logs.filter(l => l.taken).length;
+    const totalMissed = totalScheduled - totalTaken;
+    const adherenceRate = totalScheduled > 0 ? Math.round((totalTaken / totalScheduled) * 100) : 0;
+
+    const medGrouped: Record<string, { name: string; dosage: string; scheduled: number; taken: number }> = {};
+    for (const log of logs) {
+      const key = `${log.medicationName}|${log.dosage}`;
+      if (!medGrouped[key]) {
+        medGrouped[key] = {
+          name: log.medicationName,
+          dosage: log.dosage,
+          scheduled: 0,
+          taken: 0
+        };
+      }
+      medGrouped[key].scheduled++;
+      if (log.taken) medGrouped[key].taken++;
+    }
+
+    const medications = Object.values(medGrouped)
+      .sort((a, b) => b.scheduled - a.scheduled)
+      .map(m => ({
+        ...m,
+        adherenceRate: m.scheduled > 0 ? Math.round((m.taken / m.scheduled) * 100) : 0
+      }));
+
+    return { totalScheduled, totalTaken, totalMissed, adherenceRate, medications };
+  };
+
   const generateMonthlyReport = async (): Promise<MonthlyStats | null> => {
     isLoading.value = true;
     try {
       const { start, end } = monthRange.value;
       allRecords.value = await recordService.getRecordsByDateRange(start, end);
-      medicationLogs.value = await medicationService.calculateAdherence('month')
-        .then(() => {
-          const db = (recordService as any).db || null;
-          return [];
-        })
-        .catch(() => []);
 
-      const adherenceStats = await medicationService.calculateAdherence('month');
+      let logs: MedicationLog[] = [];
+      try {
+        logs = await db.getMedicationLogsByDateRange(start, end);
+      } catch {
+      }
+      medicationLogs.value = logs;
+      const medicationStats = computeMedicationStatsFromLogs(logs);
 
       const records = allRecords.value;
 
@@ -110,13 +139,7 @@ export function useMonthlyReport() {
           topTriggers: [],
           topBodyParts: [],
           dailyTrend: [],
-          medicationStats: {
-            totalScheduled: adherenceStats.totalScheduled,
-            totalTaken: adherenceStats.totalTaken,
-            totalMissed: adherenceStats.totalMissed,
-            adherenceRate: adherenceStats.adherenceRate,
-            medications: []
-          },
+          medicationStats,
           severePainDays: 0,
           consecutiveDays: 0
         };
@@ -220,40 +243,6 @@ export function useMonthlyReport() {
             avgPain: Math.round(levels.reduce((a, b) => a + b, 0) / levels.length * 10) / 10,
             count: levels.length
           }));
-      }
-
-      const medicationStats: MonthlyStats['medicationStats'] = {
-        totalScheduled: adherenceStats.totalScheduled,
-        totalTaken: adherenceStats.totalTaken,
-        totalMissed: adherenceStats.totalMissed,
-        adherenceRate: adherenceStats.adherenceRate,
-        medications: []
-      };
-
-      try {
-        const logs = await db.getMedicationLogsByDateRange(start, end);
-        medicationLogs.value = logs;
-        const medGrouped: Record<string, { name: string; dosage: string; scheduled: number; taken: number }> = {};
-        for (const log of logs) {
-          const key = `${log.medicationName}|${log.dosage}`;
-          if (!medGrouped[key]) {
-            medGrouped[key] = {
-              name: log.medicationName,
-              dosage: log.dosage,
-              scheduled: 0,
-              taken: 0
-            };
-          }
-          medGrouped[key].scheduled++;
-          if (log.taken) medGrouped[key].taken++;
-        }
-        medicationStats.medications = Object.values(medGrouped)
-          .sort((a, b) => b.scheduled - a.scheduled)
-          .map(m => ({
-            ...m,
-            adherenceRate: m.scheduled > 0 ? Math.round((m.taken / m.scheduled) * 100) : 0
-          }));
-      } catch {
       }
 
       monthlyStats.value = {

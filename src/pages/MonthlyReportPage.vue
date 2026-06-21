@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue';
+import html2canvas from 'html2canvas';
 import {
   ChevronLeft,
   ChevronRight,
@@ -311,111 +312,38 @@ const exportAsImage = async () => {
   isExportingImage.value = true;
   try {
     await nextTick();
-    const canvas = document.createElement('canvas');
-    const scale = 2;
-    const width = reportRef.value.scrollWidth;
-    const height = reportRef.value.scrollHeight;
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-    const ctx = canvas.getContext('2d');
+    await new Promise(r => setTimeout(r, 300));
+    const reportCanvas = await html2canvas(reportRef.value, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: null,
+      logging: false,
+      scrollY: -window.scrollY,
+      windowWidth: reportRef.value.scrollWidth + 40
+    });
+    const padding = 40;
+    const headerHeight = 90;
+    const totalWidth = reportCanvas.width + padding * 2;
+    const totalHeight = reportCanvas.height + headerHeight + padding * 2;
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = totalWidth;
+    finalCanvas.height = totalHeight;
+    const ctx = finalCanvas.getContext('2d');
     if (!ctx) return;
-    ctx.scale(scale, scale);
-    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    const gradient = ctx.createLinearGradient(0, 0, totalWidth, totalHeight);
     gradient.addColorStop(0, '#1e1b4b');
     gradient.addColorStop(0.5, '#312e81');
     gradient.addColorStop(1, '#1e3a5f');
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, totalWidth, totalHeight);
     ctx.fillStyle = '#f1f5f9';
-    ctx.font = 'bold 24px "Noto Sans SC", sans-serif';
-    ctx.fillText(`月度健康报告 - ${reportService.getMonthDisplay.value}`, 30, 50);
+    ctx.font = 'bold 28px "Noto Sans SC", sans-serif';
+    ctx.fillText(`月度健康报告 - ${reportService.getMonthDisplay.value}`, padding, padding + 30);
     ctx.font = '14px "Noto Sans SC", sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.fillText(`报告时间: ${new Date().toLocaleString('zh-CN')}`, 30, 75);
-    let y = 120;
-    if (stats.value) {
-      ctx.fillStyle = '#f1f5f9';
-      ctx.font = 'bold 18px "Noto Sans SC", sans-serif';
-      ctx.fillText('一、总体情况', 30, y);
-      y += 30;
-      ctx.font = '14px "Noto Sans SC", sans-serif';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      const lines = [
-        `• 记录总次数: ${stats.value.totalRecords} 次`,
-        `• 有记录天数: ${stats.value.daysWithRecords} 天`,
-        `• 平均疼痛程度: ${stats.value.avgPain} (${getPainLevelLabel(stats.value.avgPain)})`,
-        `• 最高疼痛程度: ${stats.value.maxPain} (${getPainLevelLabel(stats.value.maxPain)})`,
-        `• 最低疼痛程度: ${stats.value.minPain} (${getPainLevelLabel(stats.value.minPain)})`,
-        `• 重度疼痛天数(≥7): ${stats.value.severePainDays} 天`,
-        `• 最长连续记录: ${stats.value.consecutiveDays} 天`
-      ];
-      for (const line of lines) {
-        ctx.fillText(line, 40, y);
-        y += 25;
-      }
-      y += 15;
-      ctx.fillStyle = '#f1f5f9';
-      ctx.font = 'bold 18px "Noto Sans SC", sans-serif';
-      ctx.fillText('二、高频诱因', 30, y);
-      y += 30;
-      if (stats.value.topTriggers.length > 0) {
-        ctx.font = '14px "Noto Sans SC", sans-serif';
-        stats.value.topTriggers.forEach((t, i) => {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.fillText(`${i + 1}. ${t.name}: ${t.count} 次 (${t.percentage}%)`, 40, y);
-          y += 25;
-        });
-      } else {
-        ctx.font = '14px "Noto Sans SC", sans-serif';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillText('暂无数据', 40, y);
-        y += 25;
-      }
-      y += 15;
-      ctx.fillStyle = '#f1f5f9';
-      ctx.font = 'bold 18px "Noto Sans SC", sans-serif';
-      ctx.fillText('三、常见疼痛部位', 30, y);
-      y += 30;
-      if (stats.value.topBodyParts.length > 0) {
-        ctx.font = '14px "Noto Sans SC", sans-serif';
-        stats.value.topBodyParts.forEach((b, i) => {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.fillText(`${i + 1}. ${b.name}: ${b.count} 次 (${b.percentage}%)`, 40, y);
-          y += 25;
-        });
-      } else {
-        ctx.font = '14px "Noto Sans SC", sans-serif';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillText('暂无数据', 40, y);
-        y += 25;
-      }
-      y += 15;
-      ctx.fillStyle = '#f1f5f9';
-      ctx.font = 'bold 18px "Noto Sans SC", sans-serif';
-      ctx.fillText('四、用药情况', 30, y);
-      y += 30;
-      ctx.font = '14px "Noto Sans SC", sans-serif';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      const medStats = stats.value.medicationStats;
-      ctx.fillText(`• 用药依从率: ${medStats.adherenceRate}%`, 40, y); y += 25;
-      ctx.fillText(`• 计划服药: ${medStats.totalScheduled} 次`, 40, y); y += 25;
-      ctx.fillText(`• 实际服用: ${medStats.totalTaken} 次`, 40, y); y += 25;
-      ctx.fillText(`• 漏服: ${medStats.totalMissed} 次`, 40, y); y += 25;
-      if (medStats.medications.length > 0) {
-        y += 10;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.font = 'bold 14px "Noto Sans SC", sans-serif';
-        ctx.fillText('药物明细:', 40, y); y += 25;
-        ctx.font = '14px "Noto Sans SC", sans-serif';
-        medStats.medications.forEach((m, i) => {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          const dosage = m.dosage ? ` (${m.dosage})` : '';
-          ctx.fillText(`${i + 1}. ${m.name}${dosage}: ${m.taken}/${m.scheduled} 次, 依从率 ${m.adherenceRate}%`, 50, y);
-          y += 25;
-        });
-      }
-    }
-    canvas.toBlob((blob) => {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillText(`报告时间: ${new Date().toLocaleString('zh-CN')}    |    疼痛日记`, padding, padding + 60);
+    ctx.drawImage(reportCanvas, padding, headerHeight + padding);
+    finalCanvas.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

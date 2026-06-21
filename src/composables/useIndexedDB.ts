@@ -311,6 +311,17 @@ export function useIndexedDB() {
     return logs.find(l => l.planId === planId && l.scheduledDate === scheduledDate && l.scheduledTime === scheduledTime);
   };
 
+  const findMedicationLogByName = async (medicationName: string, scheduledDate: string, scheduledTime: string): Promise<MedicationLog | undefined> => {
+    const db = await getDB();
+    const logs = await db.getAll('medicationLogs');
+    const nameLower = medicationName.trim().toLowerCase();
+    return logs.find(l =>
+      l.medicationName.trim().toLowerCase() === nameLower &&
+      l.scheduledDate === scheduledDate &&
+      l.scheduledTime === scheduledTime
+    );
+  };
+
   return {
     addPainRecord,
     updatePainRecord,
@@ -344,6 +355,7 @@ export function useIndexedDB() {
     getMedicationLogsByDate,
     getMedicationLogsByDateRange,
     getMedicationLogsByPlanId,
-    findMedicationLog
+    findMedicationLog,
+    findMedicationLogByName
   };
 }

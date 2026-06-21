@@ -24,6 +24,9 @@ export default defineConfig({
     }),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       includeAssets: ['favicon.svg', 'icon.svg', 'robots.txt'],
       manifest: {
         name: '疼痛日记',
@@ -43,21 +46,8 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,json}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/api\.open-meteo\.com\/.*/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'weather-api',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24
-              }
-            }
-          }
-        ]
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,json}']
       }
     })
   ],

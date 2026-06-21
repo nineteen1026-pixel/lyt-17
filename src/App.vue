@@ -5,7 +5,7 @@ import { useMedicationReminder } from '@/composables/useMedicationReminder';
 import { getNotificationPermission } from '@/utils/notification';
 
 const isOnline = ref(navigator.onLine);
-const { startNotificationScheduler, stopNotificationScheduler, generateTodayLogs } = useMedicationReminder();
+const { startNotificationScheduler, stopNotificationScheduler, generateTodayLogs, scheduleTodayNotifications } = useMedicationReminder();
 
 const initMedicationReminder = async () => {
   try {
@@ -16,6 +16,11 @@ const initMedicationReminder = async () => {
 
   const permission = getNotificationPermission();
   if (permission === 'granted') {
+    try {
+      await scheduleTodayNotifications();
+    } catch (e) {
+      console.warn('调度用药通知失败:', e);
+    }
     startNotificationScheduler();
   }
 };
@@ -32,6 +37,10 @@ onMounted(() => {
     if (document.visibilityState === 'visible') {
       try {
         await generateTodayLogs();
+        const permission = getNotificationPermission();
+        if (permission === 'granted') {
+          await scheduleTodayNotifications();
+        }
       } catch (e) {
         console.warn('刷新当日服药记录失败:', e);
       }

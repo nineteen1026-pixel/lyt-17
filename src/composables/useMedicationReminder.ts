@@ -2,7 +2,14 @@ import { reactive, toRefs, computed, ref } from 'vue';
 import { useIndexedDB } from './useIndexedDB';
 import type { MedicationPlan, MedicationLog, TodayMedication, AdherenceStats } from '@/types';
 import { formatDate, formatDateTime, formatTime, getWeekRange, getMonthRange } from '@/utils/date';
-import { sendMedicationReminder, requestNotificationPermission, getNotificationPermission } from '@/utils/notification';
+import {
+  sendMedicationReminder,
+  requestNotificationPermission,
+  getNotificationPermission,
+  scheduleMedicationsViaSW,
+  cancelSchedulesViaSW,
+  type ScheduledMedication
+} from '@/utils/notification';
 
 interface MedicationReminderState {
   plans: MedicationPlan[];
@@ -15,6 +22,7 @@ interface MedicationReminderState {
 const NOTIFIED_STORAGE_KEY = 'medication_notified_keys';
 const MAX_CATCHUP_MINUTES = 120;
 let checkIntervalId: number | null = null;
+const pendingTimers: number[] = [];
 
 const loadNotifiedKeys = (): Set<string> => {
   try {
@@ -30,7 +38,7 @@ const loadNotifiedKeys = (): Set<string> => {
 const saveNotifiedKeys = (keys: Set<string>) => {
   try {
     const today = formatDate(new Date());
-    const filtered = [...keys].filter(k => k.includes(`-${today}-`));
+    const filtered = [...keys].filter(k => k.includes(today));
     localStorage.setItem(NOTIFIED_STORAGE_KEY, JSON.stringify(filtered));
   } catch {
     // ignore
@@ -38,6 +46,13 @@ const saveNotifiedKeys = (keys: Set<string>) => {
 };
 
 let NOTIFIED_KEYS: Set<string> = loadNotifiedKeys();
+
+function clearPendingTimers() {
+  for (const id of pendingTimers) {
+    clearTimeout(id);
+  }
+  pendingTimers.length = 0;
+}
 
 export function useMedicationReminder() {
   const db = useIndexedDB();
@@ -68,27 +83,22 @@ export function useMedicationReminder() {
 
   const isPlanActiveToday = (plan: MedicationPlan, date: Date): boolean => {
     const dateStr = formatDate(date);
-
-    if (plan.startDate && dateStr < plan.startDate) {
-      return false;
-    }
-    if (plan.endDate && dateStr > plan.endDate) {
-      return false;
-    }
-
+    if (plan.startDate && dateStr < plan.startDate) return false;
+    if (plan.endDate && dateStr > plan.endDate) return false;
     if (plan.daysOfWeek && plan.daysOfWeek.length > 0) {
       const dayOfWeek = date.getDay();
       return plan.daysOfWeek.includes(dayOfWeek);
     }
-
     return true;
   };
 
   const generateTodayLogs = async (targetDate?: Date) => {
     const date = targetDate || new Date();
     const dateStr = formatDate(date);
-    const enabledPlans = await db.getEnabledMedicationPlans();
+    const allPlans = await db.getAllMedicationPlans();
+    const planByName = new Map(allPlans.map(p => [p.name.trim().toLowerCase(), p]));
 
+    const enabledPlans = allPlans.filter(p => p.enabled);
     for (const plan of enabledPlans) {
       if (!isPlanActiveToday(plan, date)) continue;
       if (!plan.times || plan.times.length === 0) continue;
@@ -107,6 +117,31 @@ export function useMedicationReminder() {
           };
           await db.addMedicationLog(log);
         }
+      }
+    }
+
+    const painRecords = await db.getPainRecordsByDateRange(dateStr, dateStr);
+    for (const record of painRecords) {
+      const medications = await db.getMedicationsByRecordId(record.id!);
+      for (const med of medications) {
+        if (!med.name || !med.name.trim() || !med.time) continue;
+
+        const existingByName = await db.findMedicationLogByName(med.name, dateStr, med.time);
+        if (existingByName) continue;
+
+        const matchedPlan = planByName.get(med.name.trim().toLowerCase());
+        const planId = matchedPlan?.id ?? 0;
+
+        const log: Omit<MedicationLog, 'id'> = {
+          planId,
+          scheduledDate: dateStr,
+          scheduledTime: med.time,
+          medicationName: med.name.trim(),
+          dosage: med.dosage || '',
+          taken: false,
+          createdAt: formatDateTime(new Date())
+        };
+        await db.addMedicationLog(log);
       }
     }
   };
@@ -180,6 +215,7 @@ export function useMedicationReminder() {
     await loadPlans();
     await generateTodayLogs();
     await loadTodayMedications();
+    await scheduleTodayNotifications();
     return id;
   };
 
@@ -202,6 +238,7 @@ export function useMedicationReminder() {
     await loadPlans();
     await generateTodayLogs();
     await loadTodayMedications();
+    await scheduleTodayNotifications();
     return true;
   };
 
@@ -210,6 +247,7 @@ export function useMedicationReminder() {
     plansChanged.value++;
     await loadPlans();
     await loadTodayMedications();
+    await scheduleTodayNotifications();
   };
 
   const togglePlanEnabled = async (planId: number): Promise<boolean> => {
@@ -227,6 +265,7 @@ export function useMedicationReminder() {
     await loadPlans();
     await generateTodayLogs();
     await loadTodayMedications();
+    await scheduleTodayNotifications();
     return !existing.enabled;
   };
 
@@ -314,18 +353,76 @@ export function useMedicationReminder() {
     return await calculateAdherence('today');
   };
 
-  const checkAndSendNotifications = async (catchUp: boolean = false) => {
+  const scheduleTodayNotifications = async () => {
+    clearPendingTimers();
     state.notificationPermission = getNotificationPermission();
-    if (state.notificationPermission !== 'granted') {
-      return;
-    }
+    if (state.notificationPermission !== 'granted') return;
 
     const now = new Date();
     const dateStr = formatDate(now);
-    const currentTime = formatTime(now);
 
     await generateTodayLogs(now);
-    await loadTodayMedications();
+    const logs = await db.getMedicationLogsByDate(dateStr);
+
+    const swSchedule: ScheduledMedication[] = [];
+
+    for (const log of logs) {
+      if (log.taken) continue;
+
+      const notifyKey = `${log.planId}-${dateStr}-${log.scheduledTime}`;
+      if (NOTIFIED_KEYS.has(notifyKey)) continue;
+
+      const [hours, minutes] = log.scheduledTime.split(':').map(Number);
+      const fireDate = new Date(now);
+      fireDate.setHours(hours, minutes, 0, 0);
+
+      const delay = fireDate.getTime() - now.getTime();
+
+      if (delay > -5 * 60 * 1000 && delay <= 24 * 60 * 60 * 1000) {
+        if (delay <= 0) {
+          const diffMinutes = -delay / 1000 / 60;
+          if (diffMinutes <= MAX_CATCHUP_MINUTES) {
+            sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
+            markNotified(notifyKey);
+          } else {
+            markNotified(notifyKey);
+          }
+        } else {
+          const timerId = window.setTimeout(() => {
+            const key = `${log.planId}-${dateStr}-${log.scheduledTime}`;
+            if (!NOTIFIED_KEYS.has(key)) {
+              sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
+              markNotified(key);
+            }
+          }, delay);
+          pendingTimers.push(timerId);
+
+          swSchedule.push({
+            name: log.medicationName,
+            dosage: log.dosage,
+            time: log.scheduledTime,
+            planId: log.planId,
+            fireAt: fireDate.getTime()
+          });
+        }
+      } else if (delay < -5 * 60 * 1000) {
+        markNotified(notifyKey);
+      }
+    }
+
+    if (swSchedule.length > 0) {
+      await scheduleMedicationsViaSW(swSchedule);
+    }
+  };
+
+  const checkAndSendNotifications = async (catchUp: boolean = false) => {
+    state.notificationPermission = getNotificationPermission();
+    if (state.notificationPermission !== 'granted') return;
+
+    const now = new Date();
+    const dateStr = formatDate(now);
+
+    await generateTodayLogs(now);
 
     const enabledPlans = await db.getEnabledMedicationPlans();
     const maxPastMinutes = catchUp ? MAX_CATCHUP_MINUTES : 5;
@@ -358,18 +455,20 @@ export function useMedicationReminder() {
         }
       }
     }
+
+    await loadTodayMedications();
   };
 
   const startNotificationScheduler = () => {
-    if (checkIntervalId !== null) {
-      return;
-    }
+    if (checkIntervalId !== null) return;
+
+    scheduleTodayNotifications();
 
     checkAndSendNotifications(true);
 
     checkIntervalId = window.setInterval(() => {
       checkAndSendNotifications(false);
-    }, 30000);
+    }, 60000);
   };
 
   const stopNotificationScheduler = () => {
@@ -377,6 +476,7 @@ export function useMedicationReminder() {
       clearInterval(checkIntervalId);
       checkIntervalId = null;
     }
+    clearPendingTimers();
   };
 
   const enableNotifications = async (): Promise<boolean> => {
@@ -421,6 +521,7 @@ export function useMedicationReminder() {
     calculateAdherence,
     calculateTodayAdherence,
     checkAndSendNotifications,
+    scheduleTodayNotifications,
     startNotificationScheduler,
     stopNotificationScheduler,
     enableNotifications,

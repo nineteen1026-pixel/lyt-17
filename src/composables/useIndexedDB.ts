@@ -2,6 +2,32 @@ import { openDB } from 'idb';
 import type { IDBPDatabase } from 'idb';
 import type { PainRecord, Medication, Exercise, Weather, MedicationPlan, MedicationLog } from '@/types';
 
+export interface ExportData {
+  painRecords: PainRecord[];
+  medications: Medication[];
+  exercises: Exercise[];
+  weather: Weather[];
+  medicationPlans: MedicationPlan[];
+  medicationLogs: MedicationLog[];
+  exportDate: string;
+}
+
+export interface ImportResult {
+  success: boolean;
+  total: number;
+  imported: number;
+  skipped: number;
+  errors: string[];
+  details: {
+    painRecords: { total: number; imported: number; skipped: number };
+    medications: { total: number; imported: number; skipped: number };
+    exercises: { total: number; imported: number; skipped: number };
+    weather: { total: number; imported: number; skipped: number };
+    medicationPlans: { total: number; imported: number; skipped: number };
+    medicationLogs: { total: number; imported: number; skipped: number };
+  };
+}
+
 const DB_NAME = 'pain-diary-db';
 const DB_VERSION = 2;
 
@@ -327,6 +353,250 @@ export function useIndexedDB() {
     );
   };
 
+  const validateExportData = (data: unknown): data is ExportData => {
+    if (!data || typeof data !== 'object') {
+      return false;
+    }
+
+    const requiredKeys: Array<keyof ExportData> = [
+      'painRecords', 'medications', 'exercises', 'weather',
+      'medicationPlans', 'medicationLogs', 'exportDate'
+    ];
+
+    for (const key of requiredKeys) {
+      if (!(key in data)) {
+        return false;
+      }
+    }
+
+    const obj = data as ExportData;
+
+    if (!Array.isArray(obj.painRecords) ||
+        !Array.isArray(obj.medications) ||
+        !Array.isArray(obj.exercises) ||
+        !Array.isArray(obj.weather) ||
+        !Array.isArray(obj.medicationPlans) ||
+        !Array.isArray(obj.medicationLogs)) {
+      return false;
+    }
+
+    if (typeof obj.exportDate !== 'string') {
+      return false;
+    }
+
+    for (const record of obj.painRecords) {
+      if (!record.date || !record.timestamp ||
+          typeof record.painLevel !== 'number' ||
+          !Array.isArray(record.bodyParts) ||
+          !Array.isArray(record.triggers)) {
+        return false;
+      }
+    }
+
+    for (const med of obj.medications) {
+      if (typeof med.recordId !== 'number' || !med.name || !med.dosage || !med.time) {
+        return false;
+      }
+    }
+
+    for (const ex of obj.exercises) {
+      if (typeof ex.recordId !== 'number' || !ex.type ||
+          typeof ex.duration !== 'number' || !ex.intensity) {
+        return false;
+      }
+    }
+
+    for (const w of obj.weather) {
+      if (typeof w.recordId !== 'number' ||
+          typeof w.temperature !== 'number' ||
+          typeof w.humidity !== 'number' ||
+          typeof w.pressure !== 'number' ||
+          !w.condition || !w.city) {
+        return false;
+      }
+    }
+
+    for (const plan of obj.medicationPlans) {
+      if (!plan.name || !plan.dosage ||
+          !Array.isArray(plan.times) ||
+          !Array.isArray(plan.daysOfWeek) ||
+          !plan.startDate ||
+          typeof plan.enabled !== 'boolean') {
+        return false;
+      }
+    }
+
+    for (const log of obj.medicationLogs) {
+      if (typeof log.planId !== 'number' ||
+          !log.scheduledDate || !log.scheduledTime ||
+          !log.medicationName || !log.dosage ||
+          typeof log.taken !== 'boolean') {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const importData = async (jsonString: string): Promise<ImportResult> => {
+    const result: ImportResult = {
+      success: false,
+      total: 0,
+      imported: 0,
+      skipped: 0,
+      errors: [],
+      details: {
+        painRecords: { total: 0, imported: 0, skipped: 0 },
+        medications: { total: 0, imported: 0, skipped: 0 },
+        exercises: { total: 0, imported: 0, skipped: 0 },
+        weather: { total: 0, imported: 0, skipped: 0 },
+        medicationPlans: { total: 0, imported: 0, skipped: 0 },
+        medicationLogs: { total: 0, imported: 0, skipped: 0 }
+      }
+    };
+
+    try {
+      const parsed = JSON.parse(jsonString);
+
+      if (!validateExportData(parsed)) {
+        result.errors.push('数据格式无效，请确保是正确的导出文件');
+        return result;
+      }
+
+      const data = parsed as ExportData;
+      const db = await getDB();
+      const tx = db.transaction(
+        ['painRecords', 'medications', 'exercises', 'weather', 'medicationPlans', 'medicationLogs'],
+        'readwrite'
+      );
+
+      const idMapping: Record<string, number> = {};
+
+      const existingPainTimestamps = new Set(
+        (await tx.objectStore('painRecords').getAll()).map(r => r.timestamp)
+      );
+
+      result.details.painRecords.total = data.painRecords.length;
+      for (const record of data.painRecords) {
+        if (existingPainTimestamps.has(record.timestamp)) {
+          result.details.painRecords.skipped++;
+          continue;
+        }
+        const { id, ...recordWithoutId } = record;
+        const newId = await tx.objectStore('painRecords').add(recordWithoutId) as number;
+        if (id !== undefined) {
+          idMapping[`pain_${id}`] = newId;
+        }
+        result.details.painRecords.imported++;
+      }
+
+      const existingMedKeys = new Set(
+        (await tx.objectStore('medications').getAll()).map(m => `${m.recordId}_${m.name}_${m.time}`)
+      );
+
+      result.details.medications.total = data.medications.length;
+      for (const med of data.medications) {
+        const newRecordId = idMapping[`pain_${med.recordId}`] ?? med.recordId;
+        const key = `${newRecordId}_${med.name}_${med.time}`;
+        if (existingMedKeys.has(key)) {
+          result.details.medications.skipped++;
+          continue;
+        }
+        const { id, ...medWithoutId } = med;
+        await tx.objectStore('medications').add({ ...medWithoutId, recordId: newRecordId });
+        existingMedKeys.add(key);
+        result.details.medications.imported++;
+      }
+
+      const existingExKeys = new Set(
+        (await tx.objectStore('exercises').getAll()).map(e => `${e.recordId}_${e.type}_${e.duration}`)
+      );
+
+      result.details.exercises.total = data.exercises.length;
+      for (const ex of data.exercises) {
+        const newRecordId = idMapping[`pain_${ex.recordId}`] ?? ex.recordId;
+        const key = `${newRecordId}_${ex.type}_${ex.duration}`;
+        if (existingExKeys.has(key)) {
+          result.details.exercises.skipped++;
+          continue;
+        }
+        const { id, ...exWithoutId } = ex;
+        await tx.objectStore('exercises').add({ ...exWithoutId, recordId: newRecordId });
+        existingExKeys.add(key);
+        result.details.exercises.imported++;
+      }
+
+      const existingWeatherRecordIds = new Set(
+        (await tx.objectStore('weather').getAll()).map(w => w.recordId)
+      );
+
+      result.details.weather.total = data.weather.length;
+      for (const w of data.weather) {
+        const newRecordId = idMapping[`pain_${w.recordId}`] ?? w.recordId;
+        if (existingWeatherRecordIds.has(newRecordId)) {
+          result.details.weather.skipped++;
+          continue;
+        }
+        const { id, ...wWithoutId } = w;
+        await tx.objectStore('weather').add({ ...wWithoutId, recordId: newRecordId });
+        existingWeatherRecordIds.add(newRecordId);
+        result.details.weather.imported++;
+      }
+
+      const existingPlanKeys = new Set(
+        (await tx.objectStore('medicationPlans').getAll()).map(p => `${p.name}_${p.createdAt}`)
+      );
+
+      result.details.medicationPlans.total = data.medicationPlans.length;
+      for (const plan of data.medicationPlans) {
+        const key = `${plan.name}_${plan.createdAt}`;
+        if (existingPlanKeys.has(key)) {
+          result.details.medicationPlans.skipped++;
+          continue;
+        }
+        const { id, ...planWithoutId } = plan;
+        const newId = await tx.objectStore('medicationPlans').add(planWithoutId) as number;
+        if (id !== undefined) {
+          idMapping[`plan_${id}`] = newId;
+        }
+        existingPlanKeys.add(key);
+        result.details.medicationPlans.imported++;
+      }
+
+      const existingLogKeys = new Set(
+        (await tx.objectStore('medicationLogs').getAll()).map(l => `${l.planId}_${l.scheduledDate}_${l.scheduledTime}`)
+      );
+
+      result.details.medicationLogs.total = data.medicationLogs.length;
+      for (const log of data.medicationLogs) {
+        const newPlanId = idMapping[`plan_${log.planId}`] ?? log.planId;
+        const key = `${newPlanId}_${log.scheduledDate}_${log.scheduledTime}`;
+        if (existingLogKeys.has(key)) {
+          result.details.medicationLogs.skipped++;
+          continue;
+        }
+        const { id, ...logWithoutId } = log;
+        await tx.objectStore('medicationLogs').add({ ...logWithoutId, planId: newPlanId });
+        existingLogKeys.add(key);
+        result.details.medicationLogs.imported++;
+      }
+
+      await tx.done;
+
+      for (const detail of Object.values(result.details)) {
+        result.total += detail.total;
+        result.imported += detail.imported;
+        result.skipped += detail.skipped;
+      }
+
+      result.success = result.errors.length === 0;
+      return result;
+    } catch (error) {
+      result.errors.push(`导入失败: ${error instanceof Error ? error.message : String(error)}`);
+      return result;
+    }
+  };
+
   return {
     addPainRecord,
     updatePainRecord,
@@ -349,6 +619,7 @@ export function useIndexedDB() {
     getWeatherByRecordId,
     clearAllData,
     exportAllData,
+    importData,
     addMedicationPlan,
     updateMedicationPlan,
     deleteMedicationPlan,

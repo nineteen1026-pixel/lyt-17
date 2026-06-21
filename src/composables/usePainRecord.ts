@@ -1,5 +1,5 @@
 import { reactive, computed, toRefs } from 'vue';
-import { useIndexedDB } from './useIndexedDB';
+import { useIndexedDB, type ImportResult } from './useIndexedDB';
 import { useWeather } from './useWeather';
 import type { PainRecord, Medication, Exercise, Weather, FullRecord, MedicationPlan } from '@/types';
 import { formatDate, formatDateTime } from '@/utils/date';
@@ -404,6 +404,10 @@ export function usePainRecord() {
     await db.clearAllData();
   };
 
+  const importData = async (jsonString: string): Promise<ImportResult> => {
+    return await db.importData(jsonString);
+  };
+
   const hasBodyPart = computed(() => 
     (part: string) => state.currentRecord.bodyParts?.includes(part) ?? false
   );
@@ -456,6 +460,7 @@ export function usePainRecord() {
     removeExercise,
     getTodayStats,
     exportData,
+    importData,
     clearAllData,
     hasBodyPart,
     toggleBodyPart,

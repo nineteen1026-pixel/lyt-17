@@ -206,7 +206,7 @@ const sections = [
           <div class="flex items-center gap-3">
             <Cloud :size="24" class="text-blue-400" />
             <div>
-              <p class="text-sm text-white/60">当前天气</p>
+              <p class="text-sm text-white/60">{{ isEditing ? '记录时天气' : '当前天气' }}</p>
               <p class="font-medium">
                 {{ currentWeather.condition }} · 
                 {{ currentWeather.temperature }}℃ · 
@@ -214,7 +214,7 @@ const sections = [
               </p>
             </div>
           </div>
-          <span class="text-xs text-white/40">自动记录</span>
+          <span class="text-xs text-white/40">{{ isEditing ? '存档天气' : '自动记录' }}</span>
         </div>
       </div>
 
@@ -272,18 +272,43 @@ const sections = [
             <div
               v-for="(med, index) in currentMedications"
               :key="index"
-              class="bg-white/5 p-4 rounded-xl flex items-center justify-between"
+              class="bg-white/5 p-4 rounded-xl"
             >
-              <div>
-                <p class="font-medium">{{ med.name }}</p>
-                <p class="text-sm text-white/60">{{ med.dosage }} · {{ med.time }}</p>
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 space-y-2">
+                  <input
+                    v-model="med.name"
+                    type="text"
+                    placeholder="药物名称"
+                    class="input-field text-sm"
+                  />
+                  <div class="grid grid-cols-2 gap-2">
+                    <input
+                      v-model="med.dosage"
+                      type="text"
+                      placeholder="剂量"
+                      class="input-field text-sm"
+                    />
+                    <input
+                      v-model="med.time"
+                      type="time"
+                      class="input-field text-sm"
+                    />
+                  </div>
+                  <input
+                    v-model="med.notes"
+                    type="text"
+                    placeholder="备注（可选）"
+                    class="input-field text-sm"
+                  />
+                </div>
+                <button
+                  @click="removeMedication(index)"
+                  class="p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors shrink-0"
+                >
+                  <X :size="18" />
+                </button>
               </div>
-              <button
-                @click="removeMedication(index)"
-                class="p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors"
-              >
-                <X :size="18" />
-              </button>
             </div>
           </div>
 
@@ -336,27 +361,47 @@ const sections = [
             <div
               v-for="(ex, index) in currentExercises"
               :key="index"
-              class="bg-white/5 p-4 rounded-xl flex items-center justify-between"
+              class="bg-white/5 p-4 rounded-xl"
             >
-              <div>
-                <p class="font-medium">{{ ex.type }}</p>
-                <p class="text-sm text-white/60">
-                  {{ ex.duration }}分钟 · 
-                  <span :class="{
-                    'text-emerald-400': ex.intensity === 'low',
-                    'text-yellow-400': ex.intensity === 'medium',
-                    'text-red-400': ex.intensity === 'high'
-                  }">
-                    {{ ex.intensity === 'low' ? '低强度' : ex.intensity === 'medium' ? '中等强度' : '高强度' }}
-                  </span>
-                </p>
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 space-y-2">
+                  <select v-model="ex.type" class="input-field text-sm">
+                    <option value="" disabled>选择运动类型</option>
+                    <option v-for="type in EXERCISE_TYPES" :key="type" :value="type">{{ type }}</option>
+                  </select>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-xs text-white/60 mb-1 block">时长（分钟）</label>
+                      <input
+                        v-model.number="ex.duration"
+                        type="number"
+                        min="1"
+                        class="input-field text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-xs text-white/60 mb-1 block">强度</label>
+                      <select v-model="ex.intensity" class="input-field text-sm">
+                        <option value="low">低强度</option>
+                        <option value="medium">中等强度</option>
+                        <option value="high">高强度</option>
+                      </select>
+                    </div>
+                  </div>
+                  <input
+                    v-model="ex.notes"
+                    type="text"
+                    placeholder="感受或备注（可选）"
+                    class="input-field text-sm"
+                  />
+                </div>
+                <button
+                  @click="removeExercise(index)"
+                  class="p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors shrink-0"
+                >
+                  <X :size="18" />
+                </button>
               </div>
-              <button
-                @click="removeExercise(index)"
-                class="p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors"
-              >
-                <X :size="18" />
-              </button>
             </div>
           </div>
 

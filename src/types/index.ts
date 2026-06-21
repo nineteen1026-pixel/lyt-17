@@ -72,3 +72,50 @@ export const EXERCISE_TYPES = [
   '骑行', '羽毛球', '乒乓球', '篮球', '足球',
   '拉伸', '冥想', '其他'
 ];
+
+export interface MedicationPlan {
+  id?: number;
+  name: string;
+  dosage: string;
+  times: string[];
+  daysOfWeek: number[];
+  startDate: string;
+  endDate?: string;
+  notes?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MedicationLog {
+  id?: number;
+  planId: number;
+  scheduledDate: string;
+  scheduledTime: string;
+  medicationName: string;
+  dosage: string;
+  taken: boolean;
+  takenAt?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface TodayMedication {
+  logId?: number;
+  planId: number;
+  name: string;
+  dosage: string;
+  scheduledTime: string;
+  taken: boolean;
+  takenAt?: string;
+  overdue: boolean;
+}
+
+export interface AdherenceStats {
+  adherenceRate: number;
+  totalScheduled: number;
+  totalTaken: number;
+  totalMissed: number;
+  period: 'today' | 'week' | 'month';
+}
+

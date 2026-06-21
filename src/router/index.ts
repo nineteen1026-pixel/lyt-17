@@ -5,6 +5,7 @@ import BodyMapPage from '@/pages/BodyMapPage.vue'
 import TrendsPage from '@/pages/TrendsPage.vue'
 import HistoryPage from '@/pages/HistoryPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
+import MedicationPage from '@/pages/MedicationPage.vue'
 
 const routes = [
   {
@@ -48,6 +49,12 @@ const routes = [
     name: 'settings',
     component: SettingsPage,
     meta: { title: '设置' }
+  },
+  {
+    path: '/medication',
+    name: 'medication',
+    component: MedicationPage,
+    meta: { title: '用药管理' }
   }
 ]
 

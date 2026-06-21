@@ -1,8 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import BottomNav from '@/components/BottomNav.vue';
+import { useMedicationReminder } from '@/composables/useMedicationReminder';
+import { getNotificationPermission } from '@/utils/notification';
 
 const isOnline = ref(navigator.onLine);
+const { startNotificationScheduler, stopNotificationScheduler, generateTodayLogs } = useMedicationReminder();
+
+const initMedicationReminder = async () => {
+  try {
+    await generateTodayLogs();
+  } catch (e) {
+    console.warn('初始化当日服药记录失败:', e);
+  }
+
+  const permission = getNotificationPermission();
+  if (permission === 'granted') {
+    startNotificationScheduler();
+  }
+};
 
 onMounted(() => {
   window.addEventListener('online', () => {
@@ -11,6 +27,22 @@ onMounted(() => {
   window.addEventListener('offline', () => {
     isOnline.value = false;
   });
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+      try {
+        await generateTodayLogs();
+      } catch (e) {
+        console.warn('刷新当日服药记录失败:', e);
+      }
+    }
+  });
+
+  initMedicationReminder();
+});
+
+onUnmounted(() => {
+  stopNotificationScheduler();
 });
 </script>
 

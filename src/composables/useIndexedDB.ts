@@ -1,9 +1,9 @@
 import { openDB } from 'idb';
 import type { IDBPDatabase } from 'idb';
-import type { PainRecord, Medication, Exercise, Weather } from '@/types';
+import type { PainRecord, Medication, Exercise, Weather, MedicationPlan, MedicationLog } from '@/types';
 
 const DB_NAME = 'pain-diary-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -11,7 +11,7 @@ function initDB(): Promise<IDBPDatabase> {
   if (dbPromise) return dbPromise;
   
   dbPromise = openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, oldVersion) {
       if (!db.objectStoreNames.contains('painRecords')) {
         const painStore = db.createObjectStore('painRecords', {
           keyPath: 'id',
@@ -43,6 +43,28 @@ function initDB(): Promise<IDBPDatabase> {
           autoIncrement: true
         });
         weatherStore.createIndex('recordId', 'recordId');
+      }
+
+      if (oldVersion < 2) {
+        if (!db.objectStoreNames.contains('medicationPlans')) {
+          const planStore = db.createObjectStore('medicationPlans', {
+            keyPath: 'id',
+            autoIncrement: true
+          });
+          planStore.createIndex('enabled', 'enabled');
+          planStore.createIndex('startDate', 'startDate');
+        }
+
+        if (!db.objectStoreNames.contains('medicationLogs')) {
+          const logStore = db.createObjectStore('medicationLogs', {
+            keyPath: 'id',
+            autoIncrement: true
+          });
+          logStore.createIndex('planId', 'planId');
+          logStore.createIndex('scheduledDate', 'scheduledDate');
+          logStore.createIndex('scheduledDate_scheduledTime', ['scheduledDate', 'scheduledTime']);
+          logStore.createIndex('taken', 'taken');
+        }
       }
     }
   });
@@ -183,11 +205,13 @@ export function useIndexedDB() {
 
   const clearAllData = async (): Promise<void> => {
     const db = await getDB();
-    const tx = db.transaction(['painRecords', 'medications', 'exercises', 'weather'], 'readwrite');
+    const tx = db.transaction(['painRecords', 'medications', 'exercises', 'weather', 'medicationPlans', 'medicationLogs'], 'readwrite');
     await tx.objectStore('painRecords').clear();
     await tx.objectStore('medications').clear();
     await tx.objectStore('exercises').clear();
     await tx.objectStore('weather').clear();
+    await tx.objectStore('medicationPlans').clear();
+    await tx.objectStore('medicationLogs').clear();
     await tx.done;
   };
 
@@ -198,9 +222,93 @@ export function useIndexedDB() {
       medications: await db.getAll('medications'),
       exercises: await db.getAll('exercises'),
       weather: await db.getAll('weather'),
+      medicationPlans: await db.getAll('medicationPlans'),
+      medicationLogs: await db.getAll('medicationLogs'),
       exportDate: new Date().toISOString()
     };
     return JSON.stringify(data, null, 2);
+  };
+
+  const addMedicationPlan = async (plan: Omit<MedicationPlan, 'id'>): Promise<number> => {
+    const db = await getDB();
+    const id = await db.add('medicationPlans', plan);
+    return id as number;
+  };
+
+  const updateMedicationPlan = async (plan: MedicationPlan): Promise<void> => {
+    const db = await getDB();
+    await db.put('medicationPlans', plan);
+  };
+
+  const deleteMedicationPlan = async (id: number): Promise<void> => {
+    const db = await getDB();
+    const tx = db.transaction(['medicationPlans', 'medicationLogs'], 'readwrite');
+    await tx.objectStore('medicationPlans').delete(id);
+    await tx.objectStore('medicationLogs').index('planId').openCursor(id).then(async function deleteCursor(cursor) {
+      if (!cursor) return;
+      await cursor.delete();
+      return cursor.continue().then(deleteCursor);
+    });
+    await tx.done;
+  };
+
+  const getMedicationPlan = async (id: number): Promise<MedicationPlan | undefined> => {
+    const db = await getDB();
+    return await db.get('medicationPlans', id);
+  };
+
+  const getAllMedicationPlans = async (): Promise<MedicationPlan[]> => {
+    const db = await getDB();
+    const plans = await db.getAll('medicationPlans');
+    return plans.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  };
+
+  const getEnabledMedicationPlans = async (): Promise<MedicationPlan[]> => {
+    const db = await getDB();
+    const plans = await db.getAll('medicationPlans');
+    return plans.filter(p => p.enabled).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  };
+
+  const addMedicationLog = async (log: Omit<MedicationLog, 'id'>): Promise<number> => {
+    const db = await getDB();
+    const id = await db.add('medicationLogs', log);
+    return id as number;
+  };
+
+  const updateMedicationLog = async (log: MedicationLog): Promise<void> => {
+    const db = await getDB();
+    await db.put('medicationLogs', log);
+  };
+
+  const deleteMedicationLog = async (id: number): Promise<void> => {
+    const db = await getDB();
+    await db.delete('medicationLogs', id);
+  };
+
+  const getMedicationLogsByDate = async (date: string): Promise<MedicationLog[]> => {
+    const db = await getDB();
+    const logs = await db.getAll('medicationLogs');
+    return logs.filter(l => l.scheduledDate === date).sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+  };
+
+  const getMedicationLogsByDateRange = async (startDate: string, endDate: string): Promise<MedicationLog[]> => {
+    const db = await getDB();
+    const logs = await db.getAll('medicationLogs');
+    return logs.filter(l => l.scheduledDate >= startDate && l.scheduledDate <= endDate)
+      .sort((a, b) => (a.scheduledDate + a.scheduledTime).localeCompare(b.scheduledDate + b.scheduledTime));
+  };
+
+  const getMedicationLogsByPlanId = async (planId: number): Promise<MedicationLog[]> => {
+    const db = await getDB();
+    const logs = await db.getAll('medicationLogs');
+    return logs.filter(l => l.planId === planId)
+      .sort((a, b) => (a.scheduledDate + a.scheduledTime).localeCompare(b.scheduledDate + b.scheduledTime));
+  };
+
+  const findMedicationLog = async (planId: number, scheduledDate: string, scheduledTime: string): Promise<MedicationLog | undefined> => {
+    const db = await getDB();
+    const logs = await db.getAll('medicationLogs');
+    return logs.find(l => l.planId === planId && l.scheduledDate === scheduledDate && l.scheduledTime === scheduledTime);
   };
 
   return {
@@ -223,6 +331,19 @@ export function useIndexedDB() {
     addWeather,
     getWeatherByRecordId,
     clearAllData,
-    exportAllData
+    exportAllData,
+    addMedicationPlan,
+    updateMedicationPlan,
+    deleteMedicationPlan,
+    getMedicationPlan,
+    getAllMedicationPlans,
+    getEnabledMedicationPlans,
+    addMedicationLog,
+    updateMedicationLog,
+    deleteMedicationLog,
+    getMedicationLogsByDate,
+    getMedicationLogsByDateRange,
+    getMedicationLogsByPlanId,
+    findMedicationLog
   };
 }

@@ -158,6 +158,11 @@ export function useIndexedDB() {
     return meds.filter(m => m.recordId === recordId);
   };
 
+  const getAllMedications = async (): Promise<Medication[]> => {
+    const db = await getDB();
+    return await db.getAll('medications');
+  };
+
   const addExercise = async (exercise: Omit<Exercise, 'id'>): Promise<number> => {
     const db = await getDB();
     const id = await db.add('exercises', exercise);
@@ -334,6 +339,7 @@ export function useIndexedDB() {
     deleteMedication,
     deleteMedicationsByRecordId,
     getMedicationsByRecordId,
+    getAllMedications,
     addExercise,
     updateExercise,
     deleteExercise,

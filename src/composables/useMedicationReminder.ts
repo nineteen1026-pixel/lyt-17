@@ -20,7 +20,7 @@ interface MedicationReminderState {
 }
 
 const NOTIFIED_STORAGE_KEY = 'medication_notified_keys';
-const MAX_CATCHUP_MINUTES = 120;
+const MAX_CATCHUP_MINUTES = 1440;
 let checkIntervalId: number | null = null;
 const pendingTimers: number[] = [];
 
@@ -120,29 +120,32 @@ export function useMedicationReminder() {
       }
     }
 
-    const painRecords = await db.getPainRecordsByDateRange(dateStr, dateStr);
-    for (const record of painRecords) {
-      const medications = await db.getMedicationsByRecordId(record.id!);
-      for (const med of medications) {
-        if (!med.name || !med.name.trim() || !med.time) continue;
+    const allMedications = await db.getAllMedications();
+    const uniqueMedKey = new Set<string>();
 
-        const existingByName = await db.findMedicationLogByName(med.name, dateStr, med.time);
-        if (existingByName) continue;
+    for (const med of allMedications) {
+      if (!med.name || !med.name.trim() || !med.time) continue;
 
-        const matchedPlan = planByName.get(med.name.trim().toLowerCase());
-        const planId = matchedPlan?.id ?? 0;
+      const key = `${med.name.trim().toLowerCase()}|${med.time}`;
+      if (uniqueMedKey.has(key)) continue;
+      uniqueMedKey.add(key);
 
-        const log: Omit<MedicationLog, 'id'> = {
-          planId,
-          scheduledDate: dateStr,
-          scheduledTime: med.time,
-          medicationName: med.name.trim(),
-          dosage: med.dosage || '',
-          taken: false,
-          createdAt: formatDateTime(new Date())
-        };
-        await db.addMedicationLog(log);
-      }
+      const existingByName = await db.findMedicationLogByName(med.name, dateStr, med.time);
+      if (existingByName) continue;
+
+      const matchedPlan = planByName.get(med.name.trim().toLowerCase());
+      const planId = matchedPlan?.id ?? 0;
+
+      const log: Omit<MedicationLog, 'id'> = {
+        planId,
+        scheduledDate: dateStr,
+        scheduledTime: med.time,
+        medicationName: med.name.trim(),
+        dosage: med.dosage || '',
+        taken: false,
+        createdAt: formatDateTime(new Date())
+      };
+      await db.addMedicationLog(log);
     }
   };
 
@@ -378,40 +381,41 @@ export function useMedicationReminder() {
 
       const delay = fireDate.getTime() - now.getTime();
 
-      if (delay > -5 * 60 * 1000 && delay <= 24 * 60 * 60 * 1000) {
-        if (delay <= 0) {
-          const diffMinutes = -delay / 1000 / 60;
-          if (diffMinutes <= MAX_CATCHUP_MINUTES) {
-            sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
-            markNotified(notifyKey);
-          } else {
-            markNotified(notifyKey);
-          }
-        } else {
-          const timerId = window.setTimeout(() => {
-            const key = `${log.planId}-${dateStr}-${log.scheduledTime}`;
-            if (!NOTIFIED_KEYS.has(key)) {
-              sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
-              markNotified(key);
-            }
-          }, delay);
-          pendingTimers.push(timerId);
+      const minutesAgo = -delay / 1000 / 60;
+      if (delay <= 0 && minutesAgo <= MAX_CATCHUP_MINUTES) {
+        sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
+        markNotified(notifyKey);
+        continue;
+      }
 
-          swSchedule.push({
-            name: log.medicationName,
-            dosage: log.dosage,
-            time: log.scheduledTime,
-            planId: log.planId,
-            fireAt: fireDate.getTime()
-          });
-        }
-      } else if (delay < -5 * 60 * 1000) {
+      if (delay > 0 && delay <= 24 * 60 * 60 * 1000) {
+        const timerId = window.setTimeout(() => {
+          const key = `${log.planId}-${dateStr}-${log.scheduledTime}`;
+          if (!NOTIFIED_KEYS.has(key)) {
+            sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
+            markNotified(key);
+          }
+        }, delay);
+        pendingTimers.push(timerId);
+
+        swSchedule.push({
+          name: log.medicationName,
+          dosage: log.dosage,
+          time: log.scheduledTime,
+          planId: log.planId,
+          fireAt: fireDate.getTime()
+        });
+      }
+
+      if (delay <= 0 && minutesAgo > MAX_CATCHUP_MINUTES) {
         markNotified(notifyKey);
       }
     }
 
     if (swSchedule.length > 0) {
       await scheduleMedicationsViaSW(swSchedule);
+    } else {
+      await cancelSchedulesViaSW();
     }
   };
 
@@ -423,36 +427,26 @@ export function useMedicationReminder() {
     const dateStr = formatDate(now);
 
     await generateTodayLogs(now);
-
-    const enabledPlans = await db.getEnabledMedicationPlans();
+    const logs = await db.getMedicationLogsByDate(dateStr);
     const maxPastMinutes = catchUp ? MAX_CATCHUP_MINUTES : 5;
 
-    for (const plan of enabledPlans) {
-      if (!isPlanActiveToday(plan, now)) continue;
-      if (!plan.times) continue;
+    for (const log of logs) {
+      if (log.taken) continue;
 
-      for (const time of plan.times) {
-        const notifyKey = `${plan.id}-${dateStr}-${time}`;
-        if (NOTIFIED_KEYS.has(notifyKey)) continue;
+      const notifyKey = `${log.planId}-${dateStr}-${log.scheduledTime}`;
+      if (NOTIFIED_KEYS.has(notifyKey)) continue;
 
-        const [hours, minutes] = time.split(':').map(Number);
-        const scheduledDate = new Date(now);
-        scheduledDate.setHours(hours, minutes, 0, 0);
+      const [hours, minutes] = log.scheduledTime.split(':').map(Number);
+      const scheduledDate = new Date(now);
+      scheduledDate.setHours(hours, minutes, 0, 0);
 
-        const diffMinutes = (now.getTime() - scheduledDate.getTime()) / 1000 / 60;
+      const diffMinutes = (now.getTime() - scheduledDate.getTime()) / 1000 / 60;
 
-        if (diffMinutes >= 0 && diffMinutes <= maxPastMinutes) {
-          const log = await db.findMedicationLog(plan.id!, dateStr, time);
-          if (log && log.taken) {
-            markNotified(notifyKey);
-            continue;
-          }
-
-          sendMedicationReminder(plan.name, plan.dosage, time, plan.id);
-          markNotified(notifyKey);
-        } else if (diffMinutes > maxPastMinutes) {
-          markNotified(notifyKey);
-        }
+      if (diffMinutes >= 0 && diffMinutes <= maxPastMinutes) {
+        sendMedicationReminder(log.medicationName, log.dosage, log.scheduledTime, log.planId);
+        markNotified(notifyKey);
+      } else if (diffMinutes > maxPastMinutes) {
+        markNotified(notifyKey);
       }
     }
 

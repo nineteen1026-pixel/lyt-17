@@ -29,9 +29,11 @@ interface ScheduledMedication {
   fireAt: number;
 }
 
+const CACHE_NAME = 'pain-diary-sw-v1';
 const SCHEDULE_CACHE_KEY = 'medication-schedule';
 const NOTIFIED_CACHE_KEY_PREFIX = 'med-notified-';
 const pendingTimers: number[] = [];
+let lastCheckTime = 0;
 
 function formatDateSW(date: Date): string {
   const y = date.getFullYear();
@@ -43,7 +45,7 @@ function formatDateSW(date: Date): string {
 async function getNotifiedKeys(): Promise<Set<string>> {
   try {
     const today = formatDateSW(new Date());
-    const cache = await caches.open('pain-diary-sw-v1');
+    const cache = await caches.open(CACHE_NAME);
     const res = await cache.match(`${NOTIFIED_CACHE_KEY_PREFIX}${today}`);
     if (res) {
       const data = await res.json();
@@ -58,7 +60,7 @@ async function getNotifiedKeys(): Promise<Set<string>> {
 async function saveNotifiedKeys(keys: Set<string>): Promise<void> {
   try {
     const today = formatDateSW(new Date());
-    const cache = await caches.open('pain-diary-sw-v1');
+    const cache = await caches.open(CACHE_NAME);
     const filtered = [...keys].filter(k => k.includes(today));
     await cache.put(
       `${NOTIFIED_CACHE_KEY_PREFIX}${today}`,
@@ -73,7 +75,7 @@ async function saveNotifiedKeys(keys: Set<string>): Promise<void> {
 
 async function getSchedule(): Promise<ScheduledMedication[]> {
   try {
-    const cache = await caches.open('pain-diary-sw-v1');
+    const cache = await caches.open(CACHE_NAME);
     const res = await cache.match(SCHEDULE_CACHE_KEY);
     if (res) {
       const data = await res.json();
@@ -87,7 +89,7 @@ async function getSchedule(): Promise<ScheduledMedication[]> {
 
 async function saveSchedule(medications: ScheduledMedication[]): Promise<void> {
   try {
-    const cache = await caches.open('pain-diary-sw-v1');
+    const cache = await caches.open(CACHE_NAME);
     await cache.put(
       SCHEDULE_CACHE_KEY,
       new Response(JSON.stringify({ medications }), {
@@ -106,15 +108,19 @@ async function fireNotification(med: ScheduledMedication): Promise<void> {
 
   if (notifiedKeys.has(key)) return;
 
-  await self.registration.showNotification(`💊 用药提醒：${med.name}`, {
-    body: med.dosage
-      ? `请服用 ${med.dosage} 的 ${med.name}（${med.time}）`
-      : `请服用 ${med.name}（${med.time}）`,
-    icon: '/icon.svg',
-    tag: `medication-${med.planId}-${med.time}`,
-    requireInteraction: true,
-    data: { type: 'medication-reminder', planId: med.planId, medicationName: med.name, scheduledTime: med.time }
-  });
+  try {
+    await self.registration.showNotification(`💊 用药提醒：${med.name}`, {
+      body: med.dosage
+        ? `请服用 ${med.dosage} 的 ${med.name}（${med.time}）`
+        : `请服用 ${med.name}（${med.time}）`,
+      icon: '/icon.svg',
+      tag: `medication-${med.planId}-${med.time}`,
+      requireInteraction: true,
+      data: { type: 'medication-reminder', planId: med.planId, medicationName: med.name, scheduledTime: med.time }
+    });
+  } catch {
+    // ignore
+  }
 
   notifiedKeys.add(key);
   await saveNotifiedKeys(notifiedKeys);
@@ -127,25 +133,65 @@ function clearPendingTimers(): void {
   pendingTimers.length = 0;
 }
 
-async function scheduleMedications(medications?: ScheduledMedication[]): Promise<void> {
+async function checkAndFireDue(medications: ScheduledMedication[]): Promise<void> {
+  const now = Date.now();
+  const notifiedKeys = await getNotifiedKeys();
+  const today = formatDateSW(new Date());
+
+  for (const med of medications) {
+    const key = `${med.planId}-${today}-${med.time}`;
+    if (notifiedKeys.has(key)) continue;
+
+    const delay = med.fireAt - now;
+    if (delay <= 0) {
+      const minutesAgo = -delay / 60000;
+      if (minutesAgo < 1440) {
+        await fireNotification(med);
+      }
+    }
+  }
+}
+
+async function rebuildTimers(medications?: ScheduledMedication[]): Promise<void> {
   clearPendingTimers();
 
   const meds = medications || await getSchedule();
   if (meds.length === 0) return;
 
+  await checkAndFireDue(meds);
+
   const now = Date.now();
+  const today = formatDateSW(new Date());
+  const notifiedKeys = await getNotifiedKeys();
 
   for (const med of meds) {
-    const delay = med.fireAt - now;
+    const key = `${med.planId}-${today}-${med.time}`;
+    if (notifiedKeys.has(key)) continue;
 
+    const delay = med.fireAt - now;
     if (delay > 0 && delay < 24 * 60 * 60 * 1000) {
       const timerId = self.setTimeout(() => {
         fireNotification(med);
       }, delay);
       pendingTimers.push(timerId);
-    } else if (delay >= -5 * 60 * 1000 && delay <= 0) {
-      await fireNotification(med);
     }
+  }
+}
+
+async function ensureCheckedSchedule(medications: ScheduledMedication[]): Promise<void> {
+  await saveSchedule(medications);
+  await rebuildTimers(medications);
+}
+
+async function periodicCheck(): Promise<void> {
+  const now = Date.now();
+  if (now - lastCheckTime < 30000) return;
+  lastCheckTime = now;
+
+  try {
+    await rebuildTimers();
+  } catch {
+    // ignore
   }
 }
 
@@ -155,8 +201,22 @@ self.addEventListener('install', () => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    self.clients.claim().then(() => scheduleMedications())
+    self.clients.claim().then(() => rebuildTimers())
   );
+});
+
+self.addEventListener('fetch', (event) => {
+  event.waitUntil(periodicCheck());
+});
+
+self.addEventListener('sync', (event) => {
+  event.waitUntil(rebuildTimers());
+});
+
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'medication-check') {
+    event.waitUntil(rebuildTimers());
+  }
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -184,12 +244,16 @@ self.addEventListener('message', (event) => {
 
       case 'SCHEDULE_MEDICATIONS': {
         const medications: ScheduledMedication[] = event.data.medications || [];
-        saveSchedule(medications).then(() => scheduleMedications(medications));
+        event.waitUntil(ensureCheckedSchedule(medications));
         break;
       }
 
       case 'CANCEL_SCHEDULES':
         clearPendingTimers();
+        break;
+
+      case 'CHECK_NOW':
+        event.waitUntil(rebuildTimers());
         break;
     }
   }

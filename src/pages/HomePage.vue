@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { Plus, TrendingUp, Calendar, Droplets, Activity, Target, Pill, Check, Clock, AlertCircle } from 'lucide-vue-next';
+import { Plus, TrendingUp, Calendar, Droplets, Activity, Target, Pill, Check, Clock, AlertCircle, FileText } from 'lucide-vue-next';
 import { usePainRecord } from '@/composables/usePainRecord';
 import { useTrends } from '@/composables/useTrends';
 import { useMedicationReminder } from '@/composables/useMedicationReminder';
@@ -460,6 +460,20 @@ onActivated(() => {
       <div
         class="glass-card-hover p-5 cursor-pointer animate-slide-up"
         style="animation-delay: 0.7s"
+        @click="router.push('/report')"
+      >
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
+            <FileText :size="20" />
+          </div>
+          <h3 class="font-bold">月度报告</h3>
+        </div>
+        <p class="text-sm text-white/60">月度健康报告与就医摘要</p>
+      </div>
+
+      <div
+        class="glass-card-hover p-5 cursor-pointer animate-slide-up"
+        style="animation-delay: 0.75s"
         @click="router.push('/settings')"
       >
         <div class="flex items-center gap-3 mb-3">

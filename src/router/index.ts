@@ -6,6 +6,7 @@ import TrendsPage from '@/pages/TrendsPage.vue'
 import HistoryPage from '@/pages/HistoryPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
 import MedicationPage from '@/pages/MedicationPage.vue'
+import MonthlyReportPage from '@/pages/MonthlyReportPage.vue'
 
 const routes = [
   {
@@ -55,6 +56,12 @@ const routes = [
     name: 'medication',
     component: MedicationPage,
     meta: { title: '用药管理' }
+  },
+  {
+    path: '/report',
+    name: 'report',
+    component: MonthlyReportPage,
+    meta: { title: '月度健康报告' }
   }
 ]
 

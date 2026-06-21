@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Download, Trash2, Info, Heart, Shield, Smartphone, Upload, X, AlertCircle, CheckCircle } from 'lucide-vue-next';
+import { Download, Trash2, Info, Heart, Shield, Smartphone, Upload, X, AlertCircle, CheckCircle, FileText } from 'lucide-vue-next';
+import { useRouter } from 'vue-router';
 import { usePainRecord } from '@/composables/usePainRecord';
 import type { ImportResult } from '@/composables/useIndexedDB';
+
+const router = useRouter();
 
 const recordService = usePainRecord();
 
@@ -185,6 +188,23 @@ const isPWA = ref(checkPWA());
         <p v-if="importError" class="text-red-400 text-sm mt-3">
           ⚠️ {{ importError }}
         </p>
+      </div>
+
+      <div class="glass-card p-5">
+        <h3 class="section-title">
+          <FileText :size="20" class="text-purple-400" />
+          月度健康报告
+        </h3>
+        <p class="text-sm text-white/60 mb-4">
+          汇总疼痛趋势、高频诱因与用药情况，生成可打印的就医摘要并支持导出图片
+        </p>
+        <button
+          @click="router.push('/report')"
+          class="btn-primary flex items-center gap-2 !py-2 !px-4"
+        >
+          <FileText :size="18" />
+          查看月度报告
+        </button>
       </div>
 
       <div class="glass-card p-5">

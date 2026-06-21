@@ -20,6 +20,12 @@ const routes = [
     meta: { title: '记录疼痛' }
   },
   {
+    path: '/record/:recordId',
+    name: 'edit-record',
+    component: RecordPage,
+    meta: { title: '编辑疼痛记录' }
+  },
+  {
     path: '/body',
     name: 'body',
     component: BodyMapPage,

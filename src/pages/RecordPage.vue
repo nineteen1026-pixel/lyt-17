@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { ArrowLeft, Save, Pill, Activity, Cloud, Plus, X, Check } from 'lucide-vue-next';
 import { usePainRecord } from '@/composables/usePainRecord';
 import BodyMap from '@/components/BodyMap.vue';
@@ -10,15 +10,20 @@ import { TRIGGERS, EXERCISE_TYPES } from '@/types';
 import { formatTime } from '@/utils/date';
 
 const router = useRouter();
+const route = useRoute();
 const {
   currentRecord,
   currentMedications,
   currentExercises,
   currentWeather,
   isSaving,
+  isLoading,
+  isEditing,
   initNewRecord,
+  loadRecordForEdit,
   loadWeather,
   saveRecord: doSaveRecord,
+  updateRecord: doUpdateRecord,
   toggleBodyPart,
   toggleTrigger,
   addMedication: doAddMedication,
@@ -30,6 +35,13 @@ const {
 const activeSection = ref<'body' | 'level' | 'triggers' | 'medication' | 'exercise' | 'notes'>('body');
 const saveSuccess = ref(false);
 const errorMessage = ref('');
+const loadError = ref(false);
+
+const pageTitle = computed(() => isEditing.value ? '编辑疼痛记录' : '记录疼痛');
+const saveButtonText = computed(() => {
+  if (isSaving.value) return isEditing.value ? '保存中...' : '保存中...';
+  return isEditing.value ? '保存修改' : '保存记录';
+});
 
 const newMedication = ref({
   name: '',
@@ -48,9 +60,25 @@ const newExercise = ref({
 const customTriggers = ref<string[]>([]);
 const allTriggers = ref([...TRIGGERS]);
 
-onMounted(() => {
-  initNewRecord();
-  loadWeather();
+onMounted(async () => {
+  const recordId = route.params.recordId;
+  if (recordId) {
+    const success = await loadRecordForEdit(Number(recordId));
+    if (!success) {
+      loadError.value = true;
+      return;
+    }
+    const extraTriggers = (currentRecord.value.triggers || []).filter(t => !TRIGGERS.includes(t));
+    for (const t of extraTriggers) {
+      if (!customTriggers.value.includes(t)) {
+        customTriggers.value.push(t);
+        allTriggers.value.push(t);
+      }
+    }
+  } else {
+    initNewRecord();
+    loadWeather();
+  }
 });
 
 const goBack = () => {
@@ -107,12 +135,22 @@ const removeExercise = (index: number) => {
 const saveRecord = async () => {
   errorMessage.value = '';
   try {
-    const recordId = await doSaveRecord();
-    if (recordId) {
-      saveSuccess.value = true;
-      setTimeout(() => {
-        router.push('/history');
-      }, 1500);
+    if (isEditing.value) {
+      const success = await doUpdateRecord();
+      if (success) {
+        saveSuccess.value = true;
+        setTimeout(() => {
+          router.push('/history');
+        }, 1500);
+      }
+    } else {
+      const recordId = await doSaveRecord();
+      if (recordId) {
+        saveSuccess.value = true;
+        setTimeout(() => {
+          router.push('/history');
+        }, 1500);
+      }
     }
   } catch (e: any) {
     errorMessage.value = e.message || '保存失败，请重试';
@@ -136,15 +174,29 @@ const sections = [
         <ArrowLeft :size="20" />
         返回
       </button>
-      <h1 class="text-xl font-bold">记录疼痛</h1>
+      <h1 class="text-xl font-bold">{{ pageTitle }}</h1>
       <div class="w-16"></div>
     </div>
 
-    <div v-if="saveSuccess" class="glass-card p-8 text-center mb-6 animate-bounce-subtle">
+    <div v-if="isLoading" class="glass-card p-12 flex items-center justify-center">
+      <div class="text-center">
+        <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p class="text-white/60">加载记录中...</p>
+      </div>
+    </div>
+
+    <div v-else-if="loadError" class="glass-card p-12 text-center">
+      <div class="text-6xl mb-4">⚠️</div>
+      <h3 class="text-xl font-bold mb-2">加载失败</h3>
+      <p class="text-white/60 mb-6">无法加载该记录，可能已被删除</p>
+      <button @click="router.push('/history')" class="btn-primary">返回历史记录</button>
+    </div>
+
+    <div v-else-if="saveSuccess" class="glass-card p-8 text-center mb-6 animate-bounce-subtle">
       <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-500 to-green-500 flex items-center justify-center">
         <Check :size="32" />
       </div>
-      <h2 class="text-xl font-bold mb-2">保存成功！</h2>
+      <h2 class="text-xl font-bold mb-2">{{ isEditing ? '修改成功！' : '保存成功！' }}</h2>
       <p class="text-white/60">正在跳转到历史记录...</p>
     </div>
 
@@ -376,7 +428,7 @@ const sections = [
           :disabled="isSaving || !currentRecord.bodyParts?.length"
         >
           <Save :size="18" />
-          {{ isSaving ? '保存中...' : '保存记录' }}
+          {{ saveButtonText }}
         </button>
       </div>
 

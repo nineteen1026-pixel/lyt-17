@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { ChevronDown, ChevronUp, Trash2, Pill, Activity, Cloud, MapPin } from 'lucide-vue-next';
+import { useRouter } from 'vue-router';
+import { ChevronDown, ChevronUp, Trash2, Pill, Activity, Cloud, MapPin, Pencil } from 'lucide-vue-next';
 import type { FullRecord } from '@/types';
 import { formatDisplayDateTime } from '@/utils/date';
 
@@ -11,6 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'delete', id: number): void;
 }>();
+
+const router = useRouter();
 
 const expanded = ref(false);
 
@@ -30,6 +33,10 @@ const confirmDelete = () => {
   if (confirm('确定要删除这条记录吗？此操作无法撤销。')) {
     emit('delete', props.record.id!);
   }
+};
+
+const goToEdit = () => {
+  router.push(`/record/${props.record.id}`);
 };
 </script>
 
@@ -96,8 +103,16 @@ const confirmDelete = () => {
         
         <div class="flex items-center gap-2">
           <button
+            @click.stop="goToEdit"
+            class="p-2 rounded-lg hover:bg-blue-500/20 text-white/40 hover:text-blue-400 transition-colors"
+            title="编辑"
+          >
+            <Pencil :size="18" />
+          </button>
+          <button
             @click.stop="confirmDelete"
             class="p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors"
+            title="删除"
           >
             <Trash2 :size="18" />
           </button>
@@ -198,7 +213,7 @@ const confirmDelete = () => {
         </div>
       </div>
       
-      <div v-if="record.weather">
+      <div v-if="record.weather" class="mb-4">
         <p class="text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
           <Cloud :size="14" />
           天气情况
@@ -210,6 +225,23 @@ const confirmDelete = () => {
           <span class="text-white/70">气压：{{ record.weather.pressure }}hPa</span>
           <span class="text-white/70">天气：{{ record.weather.condition }}</span>
         </div>
+      </div>
+
+      <div class="flex gap-2 pt-2">
+        <button
+          @click.stop="goToEdit"
+          class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition-colors text-sm"
+        >
+          <Pencil :size="16" />
+          编辑记录
+        </button>
+        <button
+          @click.stop="confirmDelete"
+          class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors text-sm"
+        >
+          <Trash2 :size="16" />
+          删除记录
+        </button>
       </div>
     </div>
   </div>

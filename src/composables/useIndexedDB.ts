@@ -109,6 +109,27 @@ export function useIndexedDB() {
     return id as number;
   };
 
+  const updateMedication = async (medication: Medication): Promise<void> => {
+    const db = await getDB();
+    await db.put('medications', medication);
+  };
+
+  const deleteMedication = async (id: number): Promise<void> => {
+    const db = await getDB();
+    await db.delete('medications', id);
+  };
+
+  const deleteMedicationsByRecordId = async (recordId: number): Promise<void> => {
+    const db = await getDB();
+    const tx = db.transaction('medications', 'readwrite');
+    await tx.objectStore('medications').index('recordId').openCursor(recordId).then(async function deleteCursor(cursor) {
+      if (!cursor) return;
+      await cursor.delete();
+      return cursor.continue().then(deleteCursor);
+    });
+    await tx.done;
+  };
+
   const getMedicationsByRecordId = async (recordId: number): Promise<Medication[]> => {
     const db = await getDB();
     const meds = await db.getAll('medications');
@@ -119,6 +140,27 @@ export function useIndexedDB() {
     const db = await getDB();
     const id = await db.add('exercises', exercise);
     return id as number;
+  };
+
+  const updateExercise = async (exercise: Exercise): Promise<void> => {
+    const db = await getDB();
+    await db.put('exercises', exercise);
+  };
+
+  const deleteExercise = async (id: number): Promise<void> => {
+    const db = await getDB();
+    await db.delete('exercises', id);
+  };
+
+  const deleteExercisesByRecordId = async (recordId: number): Promise<void> => {
+    const db = await getDB();
+    const tx = db.transaction('exercises', 'readwrite');
+    await tx.objectStore('exercises').index('recordId').openCursor(recordId).then(async function deleteCursor(cursor) {
+      if (!cursor) return;
+      await cursor.delete();
+      return cursor.continue().then(deleteCursor);
+    });
+    await tx.done;
   };
 
   const getExercisesByRecordId = async (recordId: number): Promise<Exercise[]> => {
@@ -169,8 +211,14 @@ export function useIndexedDB() {
     getPainRecordsByDateRange,
     deletePainRecord,
     addMedication,
+    updateMedication,
+    deleteMedication,
+    deleteMedicationsByRecordId,
     getMedicationsByRecordId,
     addExercise,
+    updateExercise,
+    deleteExercise,
+    deleteExercisesByRecordId,
     getExercisesByRecordId,
     addWeather,
     getWeatherByRecordId,

@@ -5,6 +5,7 @@ import type { PainRecord, Medication, Exercise, Weather, FullRecord } from '@/ty
 import { formatDate, formatDateTime } from '@/utils/date';
 
 interface PainRecordState {
+  editingRecordId: number | null;
   currentRecord: Partial<PainRecord>;
   currentMedications: Medication[];
   currentExercises: Exercise[];
@@ -18,6 +19,7 @@ export function usePainRecord() {
   const weatherApi = useWeather();
 
   const state = reactive<PainRecordState>({
+    editingRecordId: null,
     currentRecord: {
       painLevel: 5,
       bodyParts: [],
@@ -32,6 +34,7 @@ export function usePainRecord() {
   });
 
   const initNewRecord = () => {
+    state.editingRecordId = null;
     state.currentRecord = {
       painLevel: 5,
       bodyParts: [],
@@ -41,6 +44,34 @@ export function usePainRecord() {
     state.currentMedications = [];
     state.currentExercises = [];
     state.currentWeather = null;
+  };
+
+  const loadRecordForEdit = async (recordId: number): Promise<boolean> => {
+    state.isLoading = true;
+    try {
+      const fullRecord = await getFullRecord(recordId);
+      if (!fullRecord) return false;
+
+      state.editingRecordId = recordId;
+      state.currentRecord = {
+        id: fullRecord.id,
+        date: fullRecord.date,
+        timestamp: fullRecord.timestamp,
+        painLevel: fullRecord.painLevel,
+        bodyParts: [...fullRecord.bodyParts],
+        triggers: [...fullRecord.triggers],
+        notes: fullRecord.notes,
+        createdAt: fullRecord.createdAt,
+        updatedAt: fullRecord.updatedAt
+      };
+      state.currentMedications = fullRecord.medications.map(m => ({ ...m }));
+      state.currentExercises = fullRecord.exercises.map(e => ({ ...e }));
+      state.currentWeather = fullRecord.weather ? { ...fullRecord.weather } : null;
+
+      return true;
+    } finally {
+      state.isLoading = false;
+    }
   };
 
   const loadWeather = async () => {
@@ -88,6 +119,74 @@ export function usePainRecord() {
       }
 
       return recordId;
+    } finally {
+      state.isSaving = false;
+    }
+  };
+
+  const updateRecord = async (): Promise<boolean> => {
+    if (!state.editingRecordId) {
+      throw new Error('没有正在编辑的记录');
+    }
+    if (!state.currentRecord.bodyParts || state.currentRecord.bodyParts.length === 0) {
+      throw new Error('请至少选择一个疼痛部位');
+    }
+
+    state.isSaving = true;
+    try {
+      const recordId = state.editingRecordId;
+      const now = new Date();
+
+      const existingRecord = await db.getPainRecord(recordId);
+      if (!existingRecord) return false;
+
+      const updatedRecord: PainRecord = {
+        ...existingRecord,
+        painLevel: state.currentRecord.painLevel ?? 5,
+        bodyParts: state.currentRecord.bodyParts ?? [],
+        triggers: state.currentRecord.triggers ?? [],
+        notes: state.currentRecord.notes,
+        updatedAt: formatDateTime(now)
+      };
+      await db.updatePainRecord(updatedRecord);
+
+      const existingMeds = await db.getMedicationsByRecordId(recordId);
+      const existingMedIds = new Set(existingMeds.map(m => m.id));
+      const currentMedIds = new Set(state.currentMedications.filter(m => m.id).map(m => m.id));
+
+      for (const medId of existingMedIds) {
+        if (!currentMedIds.has(medId)) {
+          await db.deleteMedication(medId!);
+        }
+      }
+
+      for (const med of state.currentMedications) {
+        if (med.id && existingMedIds.has(med.id)) {
+          await db.updateMedication({ ...med, recordId });
+        } else {
+          await db.addMedication({ ...med, recordId });
+        }
+      }
+
+      const existingExercises = await db.getExercisesByRecordId(recordId);
+      const existingExerciseIds = new Set(existingExercises.map(e => e.id));
+      const currentExerciseIds = new Set(state.currentExercises.filter(e => e.id).map(e => e.id));
+
+      for (const exId of existingExerciseIds) {
+        if (!currentExerciseIds.has(exId)) {
+          await db.deleteExercise(exId!);
+        }
+      }
+
+      for (const ex of state.currentExercises) {
+        if (ex.id && existingExerciseIds.has(ex.id)) {
+          await db.updateExercise({ ...ex, recordId });
+        } else {
+          await db.addExercise({ ...ex, recordId });
+        }
+      }
+
+      return true;
     } finally {
       state.isSaving = false;
     }
@@ -249,11 +348,16 @@ export function usePainRecord() {
     }
   };
 
+  const isEditing = computed(() => state.editingRecordId !== null);
+
   return {
     ...toRefs(state),
+    isEditing,
     initNewRecord,
+    loadRecordForEdit,
     loadWeather,
     saveRecord,
+    updateRecord,
     getFullRecord,
     getAllFullRecords,
     getRecordsByDateRange,

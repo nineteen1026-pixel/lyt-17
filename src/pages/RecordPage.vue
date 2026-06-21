@@ -60,6 +60,23 @@ const newExercise = ref({
 const customTriggers = ref<string[]>([]);
 const allTriggers = ref([...TRIGGERS]);
 
+const customExerciseTypes = ref<string[]>([]);
+const allExerciseTypes = ref([...EXERCISE_TYPES]);
+const showCustomExerciseTypeInput = ref(false);
+const customExerciseTypeInput = ref('');
+
+const addCustomExerciseType = () => {
+  const t = customExerciseTypeInput.value.trim();
+  if (!t) return;
+  if (!EXERCISE_TYPES.includes(t) && !customExerciseTypes.value.includes(t)) {
+    customExerciseTypes.value.push(t);
+    allExerciseTypes.value.push(t);
+  }
+  newExercise.value.type = t;
+  customExerciseTypeInput.value = '';
+  showCustomExerciseTypeInput.value = false;
+};
+
 onMounted(async () => {
   const recordId = route.params.recordId;
   if (recordId) {
@@ -73,6 +90,13 @@ onMounted(async () => {
       if (!customTriggers.value.includes(t)) {
         customTriggers.value.push(t);
         allTriggers.value.push(t);
+      }
+    }
+    const extraExTypes = currentExercises.value.map(e => e.type).filter(t => t && !EXERCISE_TYPES.includes(t));
+    for (const t of extraExTypes) {
+      if (!customExerciseTypes.value.includes(t)) {
+        customExerciseTypes.value.push(t);
+        allExerciseTypes.value.push(t);
       }
     }
   } else {
@@ -118,6 +142,11 @@ const removeMedication = (index: number) => {
 
 const addExercise = () => {
   if (newExercise.value.type.trim() && newExercise.value.duration > 0) {
+    const t = newExercise.value.type.trim();
+    if (t && !EXERCISE_TYPES.includes(t) && !customExerciseTypes.value.includes(t)) {
+      customExerciseTypes.value.push(t);
+      allExerciseTypes.value.push(t);
+    }
     doAddExercise({ ...newExercise.value });
     newExercise.value = {
       type: '',
@@ -367,7 +396,7 @@ const sections = [
                 <div class="flex-1 space-y-2">
                   <select v-model="ex.type" class="input-field text-sm">
                     <option value="" disabled>选择运动类型</option>
-                    <option v-for="type in EXERCISE_TYPES" :key="type" :value="type">{{ type }}</option>
+                    <option v-for="type in allExerciseTypes" :key="type" :value="type">{{ type }}</option>
                   </select>
                   <div class="grid grid-cols-2 gap-2">
                     <div>
@@ -408,8 +437,37 @@ const sections = [
           <div class="space-y-3">
             <select v-model="newExercise.type" class="input-field">
               <option value="" disabled>选择运动类型</option>
-              <option v-for="type in EXERCISE_TYPES" :key="type" :value="type">{{ type }}</option>
+              <option v-for="type in allExerciseTypes" :key="type" :value="type">{{ type }}</option>
             </select>
+            <div v-if="showCustomExerciseTypeInput" class="flex gap-2">
+              <input
+                v-model="customExerciseTypeInput"
+                type="text"
+                placeholder="输入自定义运动类型"
+                class="input-field flex-1 text-sm"
+                @keyup.enter="addCustomExerciseType()"
+              />
+              <button
+                @click="addCustomExerciseType()"
+                class="btn-secondary px-3 text-sm"
+                :disabled="!customExerciseTypeInput.trim()"
+              >
+                添加
+              </button>
+              <button
+                @click="showCustomExerciseTypeInput = false; customExerciseTypeInput = ''"
+                class="btn-secondary px-3 text-sm"
+              >
+                取消
+              </button>
+            </div>
+            <button
+              v-else
+              @click="showCustomExerciseTypeInput = true"
+              class="text-xs text-blue-300 hover:text-blue-200 self-start"
+            >
+              找不到类型？点击添加自定义运动
+            </button>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="text-sm text-white/60 mb-1 block">时长（分钟）</label>

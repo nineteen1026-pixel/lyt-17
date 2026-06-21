@@ -85,10 +85,27 @@ export function usePainRecord() {
     }
   };
 
+  const validateSubItems = () => {
+    for (const [i, med] of state.currentMedications.entries()) {
+      if (!med.name || !med.name.trim()) {
+        throw new Error(`第 ${i + 1} 条用药记录缺少药物名称`);
+      }
+    }
+    for (const [i, ex] of state.currentExercises.entries()) {
+      if (!ex.type || !ex.type.trim()) {
+        throw new Error(`第 ${i + 1} 条运动记录缺少运动类型`);
+      }
+      if (!ex.duration || ex.duration <= 0 || isNaN(Number(ex.duration))) {
+        throw new Error(`第 ${i + 1} 条运动记录时长无效，请设置大于 0 的分钟数`);
+      }
+    }
+  };
+
   const saveRecord = async (): Promise<number | null> => {
     if (!state.currentRecord.bodyParts || state.currentRecord.bodyParts.length === 0) {
       throw new Error('请至少选择一个疼痛部位');
     }
+    validateSubItems();
 
     state.isSaving = true;
     try {
@@ -131,6 +148,7 @@ export function usePainRecord() {
     if (!state.currentRecord.bodyParts || state.currentRecord.bodyParts.length === 0) {
       throw new Error('请至少选择一个疼痛部位');
     }
+    validateSubItems();
 
     state.isSaving = true;
     try {

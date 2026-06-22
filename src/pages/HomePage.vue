@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { Plus, TrendingUp, Calendar, Droplets, Activity, Target, Pill, Check, Clock, AlertCircle, FileText } from 'lucide-vue-next';
+import { Plus, TrendingUp, Calendar, Droplets, Activity, Target, Pill, Check, Clock, AlertCircle, FileText, Stethoscope } from 'lucide-vue-next';
 import { usePainRecord } from '@/composables/usePainRecord';
 import { useTrends } from '@/composables/useTrends';
 import { useMedicationReminder } from '@/composables/useMedicationReminder';
@@ -469,6 +469,20 @@ onActivated(() => {
           <h3 class="font-bold">月度报告</h3>
         </div>
         <p class="text-sm text-white/60">月度健康报告与就医摘要</p>
+      </div>
+
+      <div
+        class="glass-card-hover p-5 cursor-pointer animate-slide-up"
+        style="animation-delay: 0.72s"
+        @click="router.push('/consultation-report')"
+      >
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center">
+            <Stethoscope :size="20" />
+          </div>
+          <h3 class="font-bold">就诊报告</h3>
+        </div>
+        <p class="text-sm text-white/60">汇总疼痛趋势、用药依从与部位分布</p>
       </div>
 
       <div

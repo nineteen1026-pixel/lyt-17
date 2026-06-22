@@ -7,6 +7,7 @@ import HistoryPage from '@/pages/HistoryPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
 import MedicationPage from '@/pages/MedicationPage.vue'
 import MonthlyReportPage from '@/pages/MonthlyReportPage.vue'
+import ConsultationReportPage from '@/pages/ConsultationReportPage.vue'
 
 const routes = [
   {
@@ -62,6 +63,12 @@ const routes = [
     name: 'report',
     component: MonthlyReportPage,
     meta: { title: '月度健康报告' }
+  },
+  {
+    path: '/consultation-report',
+    name: 'consultation-report',
+    component: ConsultationReportPage,
+    meta: { title: '就诊报告' }
   }
 ]
 

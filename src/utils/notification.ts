@@ -131,3 +131,62 @@ export async function cancelSchedulesViaSW(): Promise<boolean> {
     return false;
   }
 }
+
+export async function sendRecordReminder(
+  currentStreak: number,
+  hasCheckedInToday: boolean
+): Promise<boolean> {
+  const title = hasCheckedInToday
+    ? '📝 今日已记录，继续保持！'
+    : '📝 别忘了记录今日疼痛';
+
+  let body = '记录每日疼痛状况，更好地了解自己的身体';
+  if (currentStreak > 0 && !hasCheckedInToday) {
+    body = `您已连续记录 ${currentStreak} 天，今天别忘了继续打卡哦！`;
+  } else if (currentStreak > 0 && hasCheckedInToday) {
+    body = `您已连续记录 ${currentStreak + 1} 天，坚持就是胜利！`;
+  } else if (!hasCheckedInToday) {
+    body = '今天还没有记录疼痛，花一分钟记录一下吧';
+  }
+
+  return await sendNotification(title, {
+    body,
+    tag: 'record-reminder',
+    requireInteraction: false,
+    data: { type: 'record-reminder' }
+  });
+}
+
+export interface ScheduledRecordReminder {
+  time: string;
+  fireAt: number;
+}
+
+export async function scheduleRecordReminderViaSW(
+  reminder: ScheduledRecordReminder
+): Promise<boolean> {
+  const reg = await getSWRegistration();
+  if (!reg || !reg.active) return false;
+
+  try {
+    reg.active.postMessage({
+      type: 'SCHEDULE_RECORD_REMINDER',
+      reminder
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function cancelRecordReminderViaSW(): Promise<boolean> {
+  const reg = await getSWRegistration();
+  if (!reg || !reg.active) return false;
+
+  try {
+    reg.active.postMessage({ type: 'CANCEL_RECORD_REMINDER' });
+    return true;
+  } catch {
+    return false;
+  }
+}

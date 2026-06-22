@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { Download, Trash2, Info, Heart, Shield, Smartphone, Upload, X, AlertCircle, CheckCircle, FileText } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
+import { Download, Trash2, Info, Heart, Shield, Smartphone, Upload, X, AlertCircle, CheckCircle, FileText, Bell, Clock } from 'lucide-vue-next';
 import { useRouter } from 'vue-router';
 import { usePainRecord } from '@/composables/usePainRecord';
+import { useRecordReminder } from '@/composables/useRecordReminder';
+import { getNotificationPermission } from '@/utils/notification';
 import type { ImportResult } from '@/composables/useIndexedDB';
 
 const router = useRouter();
 
 const recordService = usePainRecord();
+const reminderService = useRecordReminder();
 
 const isExporting = ref(false);
 const isClearing = ref(false);
@@ -130,6 +133,34 @@ const checkPWA = () => {
 };
 
 const isPWA = ref(checkPWA());
+const notificationPermission = ref<NotificationPermission | 'unsupported'>(getNotificationPermission());
+
+const handleReminderToggle = async (enabled: boolean) => {
+  if (enabled) {
+    const success = await reminderService.enableReminders();
+    if (success) {
+      notificationPermission.value = 'granted';
+    }
+  } else {
+    await reminderService.disableReminders();
+  }
+};
+
+const handleReminderTimeChange = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const time = target.value;
+  reminderService.updateSettings({ reminderTime: time });
+};
+
+const requestPermission = async () => {
+  const success = await reminderService.enableReminders();
+  notificationPermission.value = getNotificationPermission();
+  return success;
+};
+
+onMounted(() => {
+  notificationPermission.value = getNotificationPermission();
+});
 </script>
 
 <template>
@@ -188,6 +219,94 @@ const isPWA = ref(checkPWA());
         <p v-if="importError" class="text-red-400 text-sm mt-3">
           ⚠️ {{ importError }}
         </p>
+      </div>
+
+      <div class="glass-card p-5">
+        <h3 class="section-title">
+          <Bell :size="20" class="text-purple-400" />
+          补录提醒
+        </h3>
+        <p class="text-sm text-white/60 mb-4">
+          设置每日提醒时间，帮助您养成每日记录的好习惯
+        </p>
+
+        <div v-if="notificationPermission === 'denied'" class="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-4">
+          <div class="flex items-start gap-3">
+            <AlertCircle :size="20" class="text-red-400 flex-shrink-0 mt-0.5" />
+            <div class="text-sm text-red-300">
+              <p class="font-medium mb-1">通知权限已被拒绝</p>
+              <p class="text-red-300/70">请在浏览器设置中允许通知权限，然后刷新页面</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="notificationPermission === 'unsupported'" class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4">
+          <div class="flex items-start gap-3">
+            <AlertCircle :size="20" class="text-amber-400 flex-shrink-0 mt-0.5" />
+            <div class="text-sm text-amber-300">
+              <p class="font-medium mb-1">当前浏览器不支持通知</p>
+              <p class="text-amber-300/70">建议使用 Chrome、Edge 或 Safari 等现代浏览器</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="notificationPermission === 'default'" class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-4">
+          <div class="flex items-start gap-3">
+            <Bell :size="20" class="text-blue-400 flex-shrink-0 mt-0.5" />
+            <div class="flex-1">
+              <p class="font-medium text-blue-300 mb-2">开启通知权限</p>
+              <p class="text-sm text-blue-300/70 mb-3">开启通知以接收每日记录提醒</p>
+              <button @click="requestPermission" class="btn-primary !py-2 !px-4 text-sm">
+                开启通知
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between py-2">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+              <Bell :size="18" class="text-purple-400" />
+            </div>
+            <div>
+              <p class="font-medium">每日提醒</p>
+              <p class="text-xs text-white/50">在设定时间提醒记录</p>
+            </div>
+          </div>
+          <button
+            @click="handleReminderToggle(!reminderService.settings.value.enabled)"
+            :disabled="notificationPermission !== 'granted'"
+            class="relative w-12 h-7 rounded-full transition-colors"
+            :class="reminderService.settings.value.enabled && notificationPermission === 'granted'
+              ? 'bg-emerald-500'
+              : 'bg-white/20'"
+          >
+            <span
+              class="absolute top-1 w-5 h-5 bg-white rounded-full transition-all shadow"
+              :class="reminderService.settings.value.enabled && notificationPermission === 'granted'
+                ? 'left-6'
+                : 'left-1'"
+            ></span>
+          </button>
+        </div>
+
+        <div
+          v-if="reminderService.settings.value.enabled && notificationPermission === 'granted'"
+          class="mt-4 pt-4 border-t border-white/10"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <Clock :size="16" class="text-white/50" />
+              <span class="text-sm text-white/70">提醒时间</span>
+            </div>
+            <input
+              type="time"
+              :value="reminderService.settings.value.reminderTime"
+              @change="handleReminderTimeChange"
+              class="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+            />
+          </div>
+        </div>
       </div>
 
       <div class="glass-card p-5">

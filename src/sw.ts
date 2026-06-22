@@ -29,10 +29,18 @@ interface ScheduledMedication {
   fireAt: number;
 }
 
+interface ScheduledRecordReminder {
+  time: string;
+  fireAt: number;
+}
+
 const CACHE_NAME = 'pain-diary-sw-v1';
 const SCHEDULE_CACHE_KEY = 'medication-schedule';
+const RECORD_REMINDER_CACHE_KEY = 'record-reminder-schedule';
 const NOTIFIED_CACHE_KEY_PREFIX = 'med-notified-';
+const RECORD_NOTIFIED_KEY = 'record-reminder-notified';
 const pendingTimers: number[] = [];
+let recordReminderTimerId: number | null = null;
 let lastCheckTime = 0;
 
 function formatDateSW(date: Date): string {
@@ -183,6 +191,127 @@ async function ensureCheckedSchedule(medications: ScheduledMedication[]): Promis
   await rebuildTimers(medications);
 }
 
+async function getRecordReminderNotified(): Promise<{ date: string; notified: boolean }> {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const res = await cache.match(RECORD_NOTIFIED_KEY);
+    if (res) {
+      return await res.json();
+    }
+  } catch {
+    // ignore
+  }
+  return { date: '', notified: false };
+}
+
+async function saveRecordReminderNotified(date: string, notified: boolean): Promise<void> {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(
+      RECORD_NOTIFIED_KEY,
+      new Response(JSON.stringify({ date, notified }), {
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+  } catch {
+    // ignore
+  }
+}
+
+async function getRecordReminderSchedule(): Promise<ScheduledRecordReminder | null> {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const res = await cache.match(RECORD_REMINDER_CACHE_KEY);
+    if (res) {
+      const data = await res.json();
+      return data.reminder || null;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function saveRecordReminderSchedule(reminder: ScheduledRecordReminder | null): Promise<void> {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    if (reminder) {
+      await cache.put(
+        RECORD_REMINDER_CACHE_KEY,
+        new Response(JSON.stringify({ reminder }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
+    } else {
+      await cache.delete(RECORD_REMINDER_CACHE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function fireRecordReminder(): Promise<void> {
+  const today = formatDateSW(new Date());
+  const notifiedInfo = await getRecordReminderNotified();
+
+  if (notifiedInfo.date === today && notifiedInfo.notified) return;
+
+  try {
+    await self.registration.showNotification('📝 别忘了记录今日疼痛', {
+      body: '花一分钟记录今天的疼痛状况，坚持打卡哦！',
+      icon: '/icon.svg',
+      tag: 'record-reminder',
+      requireInteraction: false,
+      data: { type: 'record-reminder' }
+    });
+  } catch {
+    // ignore
+  }
+
+  await saveRecordReminderNotified(today, true);
+}
+
+async function rebuildRecordReminderTimer(): Promise<void> {
+  if (recordReminderTimerId !== null) {
+    clearTimeout(recordReminderTimerId);
+    recordReminderTimerId = null;
+  }
+
+  const reminder = await getRecordReminderSchedule();
+  if (!reminder) return;
+
+  const today = formatDateSW(new Date());
+  const notifiedInfo = await getRecordReminderNotified();
+  if (notifiedInfo.date === today && notifiedInfo.notified) return;
+
+  const now = Date.now();
+  const delay = reminder.fireAt - now;
+
+  if (delay <= 0) {
+    const minutesAgo = -delay / 60000;
+    if (minutesAgo < 60) {
+      await fireRecordReminder();
+    }
+  } else if (delay < 24 * 60 * 60 * 1000) {
+    recordReminderTimerId = self.setTimeout(() => {
+      fireRecordReminder();
+    }, delay);
+  }
+}
+
+async function ensureRecordReminderSchedule(reminder: ScheduledRecordReminder): Promise<void> {
+  await saveRecordReminderSchedule(reminder);
+  await rebuildRecordReminderTimer();
+}
+
+async function cancelRecordReminder(): Promise<void> {
+  if (recordReminderTimerId !== null) {
+    clearTimeout(recordReminderTimerId);
+    recordReminderTimerId = null;
+  }
+  await saveRecordReminderSchedule(null);
+}
+
 async function periodicCheck(): Promise<void> {
   const now = Date.now();
   if (now - lastCheckTime < 30000) return;
@@ -190,6 +319,7 @@ async function periodicCheck(): Promise<void> {
 
   try {
     await rebuildTimers();
+    await rebuildRecordReminderTimer();
   } catch {
     // ignore
   }
@@ -201,7 +331,10 @@ self.addEventListener('install', () => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    self.clients.claim().then(() => rebuildTimers())
+    self.clients.claim().then(() => {
+      rebuildTimers();
+      rebuildRecordReminderTimer();
+    })
   );
 });
 
@@ -252,8 +385,20 @@ self.addEventListener('message', (event) => {
         clearPendingTimers();
         break;
 
+      case 'SCHEDULE_RECORD_REMINDER': {
+        const reminder: ScheduledRecordReminder = event.data.reminder;
+        if (reminder) {
+          event.waitUntil(ensureRecordReminderSchedule(reminder));
+        }
+        break;
+      }
+
+      case 'CANCEL_RECORD_REMINDER':
+        event.waitUntil(cancelRecordReminder());
+        break;
+
       case 'CHECK_NOW':
-        event.waitUntil(rebuildTimers());
+        event.waitUntil(rebuildTimers().then(() => rebuildRecordReminderTimer()));
         break;
     }
   }

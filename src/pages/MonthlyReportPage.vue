@@ -16,7 +16,9 @@ import {
   Cloud,
   BarChart3,
   Target,
-  Flame
+  Flame,
+  Trophy,
+  Award
 } from 'lucide-vue-next';
 import {
   Chart as ChartJS,
@@ -711,6 +713,45 @@ onMounted(() => {
         </div>
       </div>
 
+      <div v-if="hasPainData" class="glass-card p-6">
+        <h3 class="font-bold mb-4 flex items-center gap-2">
+          <Trophy :size="18" class="text-amber-400" />
+          连续打卡与徽章
+        </h3>
+        <div class="grid grid-cols-3 gap-4 mb-5">
+          <div class="bg-white/5 rounded-xl p-4 text-center">
+            <p class="text-2xl font-bold text-amber-400">{{ stats?.streakStats.longestStreak || 0 }}</p>
+            <p class="text-xs text-white/50 mt-1">最长连续天数</p>
+          </div>
+          <div class="bg-white/5 rounded-xl p-4 text-center">
+            <p class="text-2xl font-bold text-emerald-400">{{ stats?.streakStats.totalCheckInDays || 0 }}</p>
+            <p class="text-xs text-white/50 mt-1">本月打卡天数</p>
+          </div>
+          <div class="bg-white/5 rounded-xl p-4 text-center">
+            <p class="text-2xl font-bold text-purple-400">{{ stats?.streakStats.earnedBadges.length || 0 }}</p>
+            <p class="text-xs text-white/50 mt-1">获得徽章</p>
+          </div>
+        </div>
+
+        <div v-if="stats?.streakStats.earnedBadges && stats.streakStats.earnedBadges.length > 0">
+          <p class="text-sm text-white/60 mb-3">本月获得的徽章:</p>
+          <div class="flex flex-wrap gap-2">
+            <div
+              v-for="badge in stats.streakStats.earnedBadges"
+              :key="badge.id"
+              class="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r"
+              :class="badge.color"
+            >
+              <span class="text-lg">{{ badge.icon }}</span>
+              <span class="text-sm font-medium text-white">{{ badge.name }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center py-4 text-white/40">
+          <p class="text-sm">本月还没有获得徽章，继续加油！</p>
+        </div>
+      </div>
+
       <div class="glass-card p-6 print:break-before-page">
         <h3 class="font-bold text-xl mb-4 flex items-center gap-2">
           <Target :size="20" class="text-emerald-400" />
@@ -735,6 +776,14 @@ onMounted(() => {
               <div>
                 <span class="text-white/50">记录天数:</span>
                 <span class="ml-2 font-medium">{{ stats?.daysWithRecords }} 天</span>
+              </div>
+              <div>
+                <span class="text-white/50">最长连续:</span>
+                <span class="ml-2 font-medium text-amber-400">{{ stats?.streakStats.longestStreak || 0 }} 天</span>
+              </div>
+              <div>
+                <span class="text-white/50">获得徽章:</span>
+                <span class="ml-2 font-medium text-purple-400">{{ stats?.streakStats.earnedBadges.length || 0 }} 枚</span>
               </div>
             </div>
           </div>

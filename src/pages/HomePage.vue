@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { Plus, TrendingUp, Calendar, Droplets, Activity, Target, Pill, Check, Clock, AlertCircle, FileText, Stethoscope } from 'lucide-vue-next';
+import { Plus, TrendingUp, Calendar, Droplets, Activity, Target, Pill, Check, Clock, AlertCircle, FileText, Stethoscope, Flame, Trophy, Award } from 'lucide-vue-next';
 import { usePainRecord } from '@/composables/usePainRecord';
 import { useTrends } from '@/composables/useTrends';
 import { useMedicationReminder } from '@/composables/useMedicationReminder';
+import { useCheckInStreak } from '@/composables/useCheckInStreak';
 import { formatDisplayDate } from '@/utils/date';
 import type { AdherenceStats } from '@/types';
 
@@ -12,6 +13,7 @@ const router = useRouter();
 const recordService = usePainRecord();
 const trendsService = useTrends();
 const medicationService = useMedicationReminder();
+const streakService = useCheckInStreak();
 
 const todayStats = ref({ count: 0, avgPain: 0, maxPain: 0 });
 const weekStats = ref({ avgPain: 0, totalRecords: 0 });
@@ -20,6 +22,7 @@ const weekAdherence = ref<AdherenceStats | null>(null);
 const isLoading = ref(true);
 const today = formatDisplayDate(new Date().toISOString().split('T')[0]);
 const markingId = ref<number | null>(null);
+const showBadgeModal = ref(false);
 
 const {
   todayMedications,
@@ -52,7 +55,8 @@ const loadStats = async () => {
       loadPlans(),
       loadTodayMedications(),
       calculateTodayAdherence().then(s => todayAdherence.value = s),
-      calculateAdherence('week').then(s => weekAdherence.value = s)
+      calculateAdherence('week').then(s => weekAdherence.value = s),
+      streakService.loadCheckInDates()
     ]);
   } finally {
     isLoading.value = false;
@@ -120,6 +124,70 @@ onActivated(() => {
     <div class="mb-8">
       <h1 class="text-3xl font-bold mb-2">疼痛日记</h1>
       <p class="text-white/60">{{ today }}</p>
+    </div>
+
+    <div
+      class="glass-card p-5 mb-6 cursor-pointer animate-slide-up overflow-hidden relative"
+      style="animation-delay: 0.05s"
+      @click="showBadgeModal = true"
+    >
+      <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-500/20 to-transparent rounded-full -translate-y-1/2 translate-x-1/2"></div>
+      <div class="relative z-10">
+        <div class="flex items-center gap-4">
+          <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-3xl shadow-lg shadow-amber-500/30">
+            {{ streakService.streakStats.value.currentBadge?.icon || '🌱' }}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="font-bold text-lg flex items-center gap-2">
+                <Flame :size="18" class="text-orange-400" />
+                连续打卡
+              </h3>
+              <span
+                v-if="streakService.hasCheckedInToday.value"
+                class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-medium"
+              >
+                今日已打卡
+              </span>
+              <span
+                v-else
+                class="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/60 font-medium"
+              >
+                今日未打卡
+              </span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-3xl font-bold bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
+                {{ streakService.streakStats.value.currentStreak }}
+              </span>
+              <span class="text-white/60 text-sm">天</span>
+              <span v-if="streakService.streakStats.value.currentBadge" class="text-sm text-white/50">
+                · {{ streakService.streakStats.value.currentBadge.name }}
+              </span>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-white/50 mb-1">总打卡</div>
+            <div class="text-xl font-bold text-white/80">{{ streakService.streakStats.value.totalCheckInDays }} 天</div>
+          </div>
+        </div>
+
+        <div v-if="streakService.streakStats.value.nextBadge" class="mt-4">
+          <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+            <span>距离「{{ streakService.streakStats.value.nextBadge.name }}」还差 {{ streakService.streakStats.value.daysUntilNextBadge }} 天</span>
+            <span>{{ streakService.getBadgeProgressPercentage() }}%</span>
+          </div>
+          <div class="h-2 bg-white/10 rounded-full overflow-hidden">
+            <div
+              class="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-1000"
+              :style="{ width: `${streakService.getBadgeProgressPercentage()}%` }"
+            ></div>
+          </div>
+        </div>
+        <div v-else class="mt-4 text-center">
+          <span class="text-sm text-amber-400/80">🎉 已解锁全部徽章！太厉害了！</span>
+        </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
@@ -540,6 +608,64 @@ onActivated(() => {
       <h3 class="text-lg font-bold mb-2">开始记录</h3>
       <p class="text-white/60 text-sm mb-4">记录您的第一次疼痛数据，开始追踪健康状况</p>
       <button class="btn-primary" @click="goToRecord">开始记录</button>
+    </div>
+  </div>
+
+  <div
+    v-if="showBadgeModal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    @click.self="showBadgeModal = false"
+  >
+    <div class="glass-card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto animate-bounce-subtle">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold flex items-center gap-2">
+          <Trophy :size="24" class="text-amber-400" />
+          我的徽章
+        </h2>
+        <button @click="showBadgeModal = false" class="text-white/40 hover:text-white/70 transition-colors">
+          ✕
+        </button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 mb-6">
+        <div class="bg-white/5 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-amber-400">{{ streakService.streakStats.value.currentStreak }}</p>
+          <p class="text-xs text-white/50">当前连续</p>
+        </div>
+        <div class="bg-white/5 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-emerald-400">{{ streakService.streakStats.value.longestStreak }}</p>
+          <p class="text-xs text-white/50">最长连续</p>
+        </div>
+        <div class="bg-white/5 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-blue-400">{{ streakService.streakStats.value.earnedBadges.length }}/{{ streakService.BADGES.length }}</p>
+          <p class="text-xs text-white/50">已解锁徽章</p>
+        </div>
+      </div>
+
+      <h3 class="font-bold mb-3 flex items-center gap-2">
+        <Award :size="18" class="text-purple-400" />
+        全部徽章
+      </h3>
+      <div class="grid grid-cols-3 gap-3">
+        <div
+          v-for="badge in streakService.BADGES"
+          :key="badge.id"
+          class="relative rounded-xl p-4 text-center transition-all"
+          :class="streakService.streakStats.value.earnedBadges.some(b => b.id === badge.id)
+            ? 'bg-white/10'
+            : 'bg-white/5 opacity-50 grayscale'"
+        >
+          <div
+            v-if="streakService.streakStats.value.earnedBadges.some(b => b.id === badge.id)"
+            class="absolute top-1 right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center"
+          >
+            <Check :size="12" class="text-white" />
+          </div>
+          <div class="text-3xl mb-2">{{ badge.icon }}</div>
+          <p class="text-sm font-medium mb-1">{{ badge.name }}</p>
+          <p class="text-xs text-white/50">连续 {{ badge.daysRequired }} 天</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>

@@ -119,3 +119,29 @@ export interface AdherenceStats {
   period: 'today' | 'week' | 'month';
 }
 
+export interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  daysRequired: number;
+  color: string;
+}
+
+export interface StreakStats {
+  currentStreak: number;
+  longestStreak: number;
+  totalCheckInDays: number;
+  checkInDates: string[];
+  currentBadge: Badge | null;
+  nextBadge: Badge | null;
+  earnedBadges: Badge[];
+  daysUntilNextBadge: number;
+}
+
+export interface RecordReminderSettings {
+  enabled: boolean;
+  reminderTime: string;
+  remindOnMissedDays: boolean;
+}
+

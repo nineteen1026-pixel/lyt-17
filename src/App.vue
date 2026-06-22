@@ -2,10 +2,12 @@
 import { onMounted, onUnmounted, ref } from 'vue';
 import BottomNav from '@/components/BottomNav.vue';
 import { useMedicationReminder } from '@/composables/useMedicationReminder';
+import { useRecordReminder } from '@/composables/useRecordReminder';
 import { getNotificationPermission } from '@/utils/notification';
 
 const isOnline = ref(navigator.onLine);
 const { startNotificationScheduler, stopNotificationScheduler, generateTodayLogs, scheduleTodayNotifications } = useMedicationReminder();
+const { startReminderScheduler, stopReminderScheduler } = useRecordReminder();
 
 const initMedicationReminder = async () => {
   try {
@@ -22,6 +24,14 @@ const initMedicationReminder = async () => {
       console.warn('调度用药通知失败:', e);
     }
     startNotificationScheduler();
+  }
+};
+
+const initRecordReminder = () => {
+  try {
+    startReminderScheduler();
+  } catch (e) {
+    console.warn('初始化记录提醒失败:', e);
   }
 };
 
@@ -48,10 +58,12 @@ onMounted(() => {
   });
 
   initMedicationReminder();
+  initRecordReminder();
 });
 
 onUnmounted(() => {
   stopNotificationScheduler();
+  stopReminderScheduler();
 });
 </script>
 

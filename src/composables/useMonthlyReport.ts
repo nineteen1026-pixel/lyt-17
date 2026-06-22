@@ -1,7 +1,8 @@
 import { ref, computed } from 'vue';
 import { usePainRecord } from './usePainRecord';
 import { useIndexedDB } from './useIndexedDB';
-import type { FullRecord, MedicationLog } from '@/types';
+import { useCheckInStreak } from './useCheckInStreak';
+import type { FullRecord, MedicationLog, Badge } from '@/types';
 import { formatDate, getMonthRange } from '@/utils/date';
 
 export interface MonthlyStats {
@@ -26,11 +27,18 @@ export interface MonthlyStats {
   severePainDays: number;
   consecutiveDays: number;
   weatherCorrelation?: Array<{ group: string; avgPain: number; count: number }>;
+  streakStats: {
+    currentStreak: number;
+    longestStreak: number;
+    earnedBadges: Badge[];
+    totalCheckInDays: number;
+  };
 }
 
 export function useMonthlyReport() {
   const recordService = usePainRecord();
   const db = useIndexedDB();
+  const streakService = useCheckInStreak();
 
   const currentDate = ref(new Date());
   const isLoading = ref(false);
@@ -141,7 +149,13 @@ export function useMonthlyReport() {
           dailyTrend: [],
           medicationStats,
           severePainDays: 0,
-          consecutiveDays: 0
+          consecutiveDays: 0,
+          streakStats: {
+            currentStreak: 0,
+            longestStreak: 0,
+            earnedBadges: [],
+            totalCheckInDays: 0
+          }
         };
         return monthlyStats.value;
       }
@@ -222,6 +236,8 @@ export function useMonthlyReport() {
       const severePainDays = dailyTrend.filter(d => d.avgPain >= 7).length;
       const consecutiveDays = calculateConsecutiveDays(records.map(r => r.date));
 
+      const monthBadges = streakService.BADGES.filter(b => consecutiveDays >= b.daysRequired);
+
       const recordsWithWeather = records.filter(r => r.weather);
       let weatherCorrelation: MonthlyStats['weatherCorrelation'] = undefined;
       if (recordsWithWeather.length >= 3) {
@@ -260,7 +276,13 @@ export function useMonthlyReport() {
         medicationStats,
         severePainDays,
         consecutiveDays,
-        weatherCorrelation
+        weatherCorrelation,
+        streakStats: {
+          currentStreak: consecutiveDays,
+          longestStreak: consecutiveDays,
+          earnedBadges: monthBadges,
+          totalCheckInDays: daysWithRecords
+        }
       };
 
       return monthlyStats.value;

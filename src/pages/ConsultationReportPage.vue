@@ -3,17 +3,10 @@ import { ref, onMounted, watch, computed, nextTick } from 'vue';
 import html2canvas from 'html2canvas';
 import {
   ChevronLeft,
-  FileText,
   Download,
   TrendingUp,
   TrendingDown,
   Minus,
-  MapPin,
-  Pill,
-  Calendar,
-  Activity,
-  BarChart3,
-  Clock,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -409,8 +402,8 @@ const exportAsImage = async () => {
         });
       }
     });
-    const padding = 40;
-    const headerHeight = 90;
+    const padding = 48;
+    const headerHeight = 200;
     const totalWidth = reportCanvas.width + padding * 2;
     const totalHeight = reportCanvas.height + headerHeight + padding * 2;
     const finalCanvas = document.createElement('canvas');
@@ -418,24 +411,46 @@ const exportAsImage = async () => {
     finalCanvas.height = totalHeight;
     const ctx = finalCanvas.getContext('2d');
     if (!ctx) return;
-    const gradient = ctx.createLinearGradient(0, 0, totalWidth, totalHeight);
-    gradient.addColorStop(0, '#1e1b4b');
-    gradient.addColorStop(0.5, '#312e81');
-    gradient.addColorStop(1, '#1e3a5f');
-    ctx.fillStyle = gradient;
+
+    const mainBgGradient = ctx.createLinearGradient(0, 0, totalWidth, totalHeight);
+    mainBgGradient.addColorStop(0, '#1e1b4b');
+    mainBgGradient.addColorStop(0.5, '#312e81');
+    mainBgGradient.addColorStop(1, '#1e3a5f');
+    ctx.fillStyle = mainBgGradient;
     ctx.fillRect(0, 0, totalWidth, totalHeight);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.font = 'bold 26px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText('就诊报告', padding, padding + 30);
-    ctx.font = '13px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
+    ctx.fillRect(0, 0, totalWidth, 6);
+
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.15)';
+    ctx.fillRect(0, 6, totalWidth, headerHeight - 6);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 56px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText('就 诊 报 告', padding, padding + 56);
+
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.95)';
+    ctx.fillRect(padding, padding + 72, 80, 5);
+
+    ctx.fillStyle = '#e0f2fe';
+    ctx.font = 'bold 24px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(`报告周期：${reportService.dateRangeDisplay.value}`, padding, padding + 118);
+
+    ctx.fillStyle = 'rgba(248, 250, 252, 0.7)';
+    ctx.font = '16px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
     ctx.fillText(
-      `${reportService.dateRangeDisplay.value}    |    生成时间: ${new Date().toLocaleString('zh-CN')}    |    疼痛日记`,
+      `生成时间：${new Date().toLocaleString('zh-CN')}      疼痛健康数据跟踪系统`,
       padding,
-      padding + 56
+      padding + 150
     );
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.fillRect(padding, headerHeight - 6, reportCanvas.width, 1);
+
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(padding, headerHeight - 10);
+    ctx.lineTo(totalWidth - padding, headerHeight - 10);
+    ctx.stroke();
+
     ctx.drawImage(reportCanvas, padding, headerHeight + padding);
     finalCanvas.toBlob((blob) => {
       if (!blob) return;
@@ -548,10 +563,52 @@ onMounted(() => {
     </div>
 
     <div v-else ref="reportRef" data-report-content class="space-y-5">
-      <div class="glass-card p-5 border-l-4 border-cyan-500/50">
-        <div class="flex items-center gap-2 mb-4">
-          <Stethoscope :size="20" class="text-cyan-400" />
-          <h2 class="font-bold text-lg">患者疼痛概要</h2>
+      <div class="glass-card overflow-hidden">
+        <div class="bg-gradient-to-r from-cyan-600/40 to-blue-600/40 px-6 py-5 border-b border-cyan-400/20">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs text-cyan-200/80 tracking-widest uppercase mb-1">Patient Pain Health Report</p>
+              <h2 class="text-3xl font-bold tracking-wide">患者疼痛就诊报告</h2>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-block w-12 h-1 bg-cyan-400 rounded-full"></span>
+                <p class="text-cyan-100/80 text-sm">供线下复诊与医师参考</p>
+              </div>
+            </div>
+            <div class="text-right hidden sm:block">
+              <p class="text-xs text-white/50 mb-1">报告周期</p>
+              <p class="text-lg font-bold text-cyan-200">{{ reportService.dateRangeDisplay.value }}</p>
+              <p class="text-xs text-white/50 mt-1">共 {{ stats?.totalDays }} 天</p>
+            </div>
+          </div>
+        </div>
+        <div class="sm:hidden px-5 py-3 bg-white/5 border-b border-white/10">
+          <p class="text-xs text-white/50">报告周期</p>
+          <p class="text-base font-bold text-cyan-300">{{ reportService.dateRangeDisplay.value }}（共 {{ stats?.totalDays }} 天）</p>
+        </div>
+        <div class="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 divide-x divide-white/10">
+          <div class="text-center px-2">
+            <p class="text-xs text-white/50">生成时间</p>
+            <p class="text-sm font-medium mt-0.5">{{ new Date().toLocaleDateString('zh-CN') }}</p>
+          </div>
+          <div class="text-center px-2">
+            <p class="text-xs text-white/50">记录天数</p>
+            <p class="text-sm font-medium mt-0.5 text-cyan-300">{{ stats?.daysWithRecords }} / {{ stats?.totalDays }} 天</p>
+          </div>
+          <div class="text-center px-2">
+            <p class="text-xs text-white/50">疼痛记录</p>
+            <p class="text-sm font-medium mt-0.5 text-blue-300">{{ stats?.totalRecords }} 次</p>
+          </div>
+          <div class="text-center px-2">
+            <p class="text-xs text-white/50">用药记录</p>
+            <p class="text-sm font-medium mt-0.5 text-emerald-300">{{ stats?.medicationStats.totalScheduled }} 次</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card p-5">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-sm font-bold">01</span>
+          <h3 class="text-xl font-bold">患者疼痛概要</h3>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div class="bg-white/5 rounded-xl p-3 text-center">
@@ -577,10 +634,10 @@ onMounted(() => {
       </div>
 
       <div v-if="hasPainData" class="glass-card p-5">
-        <h3 class="font-bold mb-3 flex items-center gap-2">
-          <Activity :size="18" class="text-blue-400" />
-          疼痛趋势变化
-        </h3>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center text-sm font-bold">02</span>
+          <h3 class="text-xl font-bold">疼痛趋势变化</h3>
+        </div>
         <div class="h-56">
           <Line :data="trendChartData" :options="trendChartOptions" />
         </div>
@@ -602,20 +659,20 @@ onMounted(() => {
 
       <div class="grid md:grid-cols-2 gap-5">
         <div v-if="hasPainData" class="glass-card p-5">
-          <h3 class="font-bold mb-3 flex items-center gap-2">
-            <BarChart3 :size="18" class="text-yellow-400" />
-            疼痛程度分布
-          </h3>
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-8 h-8 rounded-lg bg-yellow-500/20 text-yellow-300 flex items-center justify-center text-sm font-bold">03</span>
+            <h3 class="text-xl font-bold">疼痛程度分布</h3>
+          </div>
           <div class="h-52">
             <Doughnut :data="painDistributionChartData" :options="painDistributionChartOptions" />
           </div>
         </div>
 
         <div v-if="hasPainData && stats?.bodyPartSummary && stats.bodyPartSummary.length > 0" class="glass-card p-5">
-          <h3 class="font-bold mb-3 flex items-center gap-2">
-            <MapPin :size="18" class="text-pink-400" />
-            疼痛部位分布
-          </h3>
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-8 h-8 rounded-lg bg-pink-500/20 text-pink-300 flex items-center justify-center text-sm font-bold">04</span>
+            <h3 class="text-xl font-bold">疼痛部位分布</h3>
+          </div>
           <div class="h-52">
             <Bar :data="bodyPartChartData" :options="bodyPartChartOptions" />
           </div>
@@ -623,10 +680,10 @@ onMounted(() => {
       </div>
 
       <div v-if="hasPainData && stats?.bodyPartSummary && stats.bodyPartSummary.length > 0" class="glass-card p-5">
-        <h3 class="font-bold mb-3 flex items-center gap-2">
-          <MapPin :size="18" class="text-pink-400" />
-          部位详情（按频次排序）
-        </h3>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center text-sm font-bold">05</span>
+          <h3 class="text-xl font-bold">部位详情（按频次排序）</h3>
+        </div>
         <div class="space-y-2">
           <div
             v-for="(part, index) in stats.bodyPartSummary"
@@ -660,10 +717,10 @@ onMounted(() => {
       </div>
 
       <div class="glass-card p-5">
-        <h3 class="font-bold mb-3 flex items-center gap-2">
-          <Pill :size="18" class="text-emerald-400" />
-          用药依从情况
-        </h3>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-sm font-bold">06</span>
+          <h3 class="text-xl font-bold">用药依从情况</h3>
+        </div>
         <div v-if="!hasMedicationData" class="text-center py-6 text-white/40">
           所选时段暂无用药记录
         </div>
@@ -728,10 +785,10 @@ onMounted(() => {
       </div>
 
       <div v-if="hasPainData && stats?.topTriggers && stats.topTriggers.length > 0" class="glass-card p-5">
-        <h3 class="font-bold mb-3 flex items-center gap-2">
-          <AlertTriangle :size="18" class="text-yellow-400" />
-          高频诱因
-        </h3>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-300 flex items-center justify-center text-sm font-bold">07</span>
+          <h3 class="text-xl font-bold">高频诱因</h3>
+        </div>
         <div class="flex flex-wrap gap-2">
           <span
             v-for="(t, i) in stats.topTriggers"
@@ -744,10 +801,13 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="glass-card p-5 border-t-2 border-cyan-500/30">
-        <div class="flex items-center gap-2 mb-4">
-          <FileText :size="20" class="text-cyan-400" />
-          <h2 class="font-bold text-lg">就诊信息摘要</h2>
+      <div class="glass-card p-5 border-t-4 border-cyan-500/40">
+        <div class="flex items-center gap-3 mb-5">
+          <span class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/30 to-blue-500/30 text-cyan-200 flex items-center justify-center text-base font-bold">08</span>
+          <div>
+            <h2 class="text-2xl font-bold">就诊信息摘要</h2>
+            <p class="text-xs text-white/40 mt-0.5">供医师快速了解患者疼痛状况</p>
+          </div>
         </div>
         <div class="bg-white/5 rounded-xl p-5 space-y-4">
           <div>

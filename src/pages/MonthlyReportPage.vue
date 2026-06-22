@@ -301,7 +301,15 @@ const getPainLevelColor = (level: number): string => {
   return 'text-red-400';
 };
 
-const hasData = computed(() => stats.value && stats.value.totalRecords > 0);
+const hasData = computed(() => {
+  if (!stats.value) return false;
+  return stats.value.totalRecords > 0 || stats.value.medicationStats.totalScheduled > 0;
+});
+
+const hasPainData = computed(() => stats.value && stats.value.totalRecords > 0);
+const hasMedicationData = computed(() =>
+  stats.value && stats.value.medicationStats.totalScheduled > 0
+);
 
 const printReport = () => {
   window.print();
@@ -310,19 +318,45 @@ const printReport = () => {
 const exportAsImage = async () => {
   if (!reportRef.value) return;
   isExportingImage.value = true;
+  const originalScrollY = window.scrollY;
+  const originalOverflow = document.body.style.overflow;
   try {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     await nextTick();
-    await new Promise(r => setTimeout(r, 300));
-    const reportCanvas = await html2canvas(reportRef.value, {
+    await new Promise(r => setTimeout(r, 500));
+    const targetEl = reportRef.value;
+    const reportCanvas = await html2canvas(targetEl, {
       scale: 2,
       useCORS: true,
+      allowTaint: true,
       backgroundColor: null,
       logging: false,
-      scrollY: -window.scrollY,
-      windowWidth: reportRef.value.scrollWidth + 40
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: Math.max(
+        document.documentElement.scrollWidth,
+        targetEl.scrollWidth + 80
+      ),
+      windowHeight: targetEl.scrollHeight + 200,
+      ignoreElements: (el) => {
+        const tag = (el as HTMLElement).tagName?.toLowerCase();
+        return tag === 'script' || tag === 'style';
+      },
+      onclone: (clonedDoc) => {
+        const clonedEl = clonedDoc.querySelector<HTMLElement>('[ref="reportRef"]')
+          || clonedDoc.querySelector('.space-y-6');
+        if (clonedEl) {
+          clonedEl.style.transform = 'none';
+          clonedEl.style.margin = '0';
+        }
+        const charts = clonedDoc.querySelectorAll('canvas');
+        charts.forEach((canvas) => {
+          canvas.style.display = 'block';
+        });
+      }
     });
-    const padding = 40;
-    const headerHeight = 90;
+    const padding = 48;
+    const headerHeight = 100;
     const totalWidth = reportCanvas.width + padding * 2;
     const totalHeight = reportCanvas.height + headerHeight + padding * 2;
     const finalCanvas = document.createElement('canvas');
@@ -337,11 +371,17 @@ const exportAsImage = async () => {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, totalWidth, totalHeight);
     ctx.fillStyle = '#f1f5f9';
-    ctx.font = 'bold 28px "Noto Sans SC", sans-serif';
-    ctx.fillText(`月度健康报告 - ${reportService.getMonthDisplay.value}`, padding, padding + 30);
-    ctx.font = '14px "Noto Sans SC", sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(`报告时间: ${new Date().toLocaleString('zh-CN')}    |    疼痛日记`, padding, padding + 60);
+    ctx.font = 'bold 30px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(`月度健康报告 · ${reportService.getMonthDisplay.value}`, padding, padding + 36);
+    ctx.font = '14px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.fillText(
+      `报告时间: ${new Date().toLocaleString('zh-CN')}    |    疼痛日记 · Pain Diary`,
+      padding,
+      padding + 64
+    );
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillRect(padding, headerHeight - 8, reportCanvas.width, 1);
     ctx.drawImage(reportCanvas, padding, headerHeight + padding);
     finalCanvas.toBlob((blob) => {
       if (!blob) return;
@@ -355,6 +395,8 @@ const exportAsImage = async () => {
       URL.revokeObjectURL(url);
     }, 'image/png');
   } finally {
+    document.body.style.overflow = originalOverflow;
+    window.scrollTo({ top: originalScrollY, behavior: 'instant' as ScrollBehavior });
     isExportingImage.value = false;
   }
 };
@@ -436,51 +478,55 @@ onMounted(() => {
         <div class="stat-card">
           <div class="flex items-center justify-center gap-2 mb-2">
             <Activity :size="18" class="text-blue-400" />
-            <span class="stat-label">总记录数</span>
+            <span class="stat-label">疼痛记录</span>
           </div>
-          <div class="stat-value">{{ stats?.totalRecords }}</div>
+          <div class="stat-value">{{ stats?.totalRecords || 0 }}</div>
         </div>
         <div class="stat-card">
           <div class="flex items-center justify-center gap-2 mb-2">
             <Calendar :size="18" class="text-emerald-400" />
             <span class="stat-label">记录天数</span>
           </div>
-          <div class="stat-value">{{ stats?.daysWithRecords }}</div>
+          <div class="stat-value">{{ stats?.daysWithRecords || 0 }}</div>
         </div>
         <div class="stat-card">
           <div class="flex items-center justify-center gap-2 mb-2">
             <TrendingUp :size="18" class="text-yellow-400" />
             <span class="stat-label">平均疼痛</span>
           </div>
-          <div class="stat-value" :class="getPainLevelColor(stats?.avgPain || 0)">{{ stats?.avgPain }}</div>
+          <div class="stat-value" :class="hasPainData ? getPainLevelColor(stats?.avgPain || 0) : 'text-white/40'">
+            {{ hasPainData ? stats?.avgPain : '—' }}
+          </div>
         </div>
         <div class="stat-card">
           <div class="flex items-center justify-center gap-2 mb-2">
-            <Flame :size="18" class="text-red-400" />
-            <span class="stat-label">最高疼痛</span>
+            <Pill :size="18" class="text-emerald-400" />
+            <span class="stat-label">用药记录</span>
           </div>
-          <div class="stat-value" :class="getPainLevelColor(stats?.maxPain || 0)">{{ stats?.maxPain }}</div>
+          <div class="stat-value text-emerald-400">{{ stats?.medicationStats.totalScheduled || 0 }}</div>
         </div>
       </div>
 
       <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
         <div class="glass-card p-4 text-center">
           <p class="text-sm text-white/60 mb-1">重度疼痛天数</p>
-          <p class="text-2xl font-bold text-red-400">{{ stats?.severePainDays }} 天</p>
+          <p class="text-2xl font-bold text-red-400">{{ hasPainData ? stats?.severePainDays : '—' }}</p>
         </div>
         <div class="glass-card p-4 text-center">
           <p class="text-sm text-white/60 mb-1">最长连续记录</p>
-          <p class="text-2xl font-bold text-emerald-400">{{ stats?.consecutiveDays }} 天</p>
+          <p class="text-2xl font-bold text-emerald-400">{{ hasPainData ? stats?.consecutiveDays : '—' }}</p>
         </div>
         <div class="glass-card p-4 text-center">
           <p class="text-sm text-white/60 mb-1">用药依从率</p>
-          <p class="text-2xl font-bold" :class="(stats?.medicationStats.adherenceRate || 0) >= 80 ? 'text-emerald-400' : 'text-yellow-400'">
-            {{ stats?.medicationStats.adherenceRate }}%
+          <p class="text-2xl font-bold" :class="hasMedicationData
+            ? ((stats?.medicationStats.adherenceRate || 0) >= 80 ? 'text-emerald-400' : 'text-yellow-400')
+            : 'text-white/30'">
+            {{ hasMedicationData ? `${stats?.medicationStats.adherenceRate}%` : '—' }}
           </p>
         </div>
       </div>
 
-      <div class="glass-card p-6">
+      <div v-if="hasPainData" class="glass-card p-6">
         <h3 class="font-bold mb-4 flex items-center gap-2">
           <TrendingUp :size="18" class="text-blue-400" />
           疼痛趋势图
@@ -496,7 +542,10 @@ onMounted(() => {
             <BarChart3 :size="18" class="text-yellow-400" />
             疼痛程度分布
           </h3>
-          <div class="h-56">
+          <div v-if="!hasPainData" class="h-56 flex items-center justify-center text-white/40">
+            暂无疼痛数据
+          </div>
+          <div v-else class="h-56">
             <Bar :data="painDistributionData" :options="painDistributionOptions" />
           </div>
         </div>
